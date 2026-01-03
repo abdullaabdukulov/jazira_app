@@ -10,6 +10,28 @@ app_license = "mit"
 
 # required_apps = []
 
+fixtures = [
+    {
+        "dt": "DocType",
+        "filters": [
+            ["name", "in", ["Jazira App Daily Sales Import"]]
+        ]
+    },
+    {
+        "dt": "Client Script",
+        "filters": [
+            ["dt", "=", "Jazira App Daily Sales Import"]
+        ]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "in", ["Sales Invoice", "Stock Entry"]],
+            ["fieldname", "=", "custom_daily_sales_import"]
+        ]
+    }
+]
+
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
@@ -43,6 +65,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
+doctype_js = {
+    "Jazira App Daily Sales Import": "public/js/jazira_app_daily_sales_import.js"
+}
+
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -207,6 +233,14 @@ app_license = "mit"
 # User Data Protection
 # --------------------
 
+user_data_fields = [
+    {
+        "doctype": "{doctype_1}",
+        "filter_by": "{filter_by}",
+        "redact_fields": ["{field_1}", "{field_2}"],
+        "partial": 1,
+    },
+]
 # user_data_fields = [
 # 	{
 # 		"doctype": "{doctype_1}",
