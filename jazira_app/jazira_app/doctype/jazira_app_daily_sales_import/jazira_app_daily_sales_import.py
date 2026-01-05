@@ -387,6 +387,11 @@ def create_manufacture_stock_entries(
             se.from_warehouse = doc.source_warehouse
             se.to_warehouse = doc.source_warehouse
             
+            # Suppress validation messages
+            se.flags.ignore_permissions = True
+            se.flags.ignore_validate = False
+            se.flags.ignore_mandatory = False
+            
             # Get raw materials from BOM
             raw_materials = get_bom_items(bom, qty)
             
@@ -417,11 +422,15 @@ def create_manufacture_stock_entries(
             })
             log_entries.append(f"   ➕ {item_code}: {qty} {item_uom} → {doc.source_warehouse}")
             
-            se.flags.ignore_permissions = True
+            # Suppress msgprint during insert/submit
+            frappe.flags.mute_messages = True
+            
             se.insert()
             
             if submit:
                 se.submit()
+            
+            frappe.flags.mute_messages = False
             
             stock_entry_names.append(se.name)
             log_entries.append(f"   ✅ Stock Entry: {se.name}")
@@ -434,6 +443,7 @@ def create_manufacture_stock_entries(
         raise
     finally:
         frappe.flags.allow_negative_stock = False
+        frappe.flags.mute_messages = False  # Always reset
     
     # Save log
     current_log = doc.import_log or ""
@@ -481,15 +491,21 @@ def create_sales_invoice(
             "qty": item_data["qty"],
             "rate": item_data["rate"],
             "warehouse": doc.source_warehouse,  # ← MINUS from here
-            "allow_zero_valuation_rate": 1  # ← YANGI: Valuation Rate bo'lmasa ham ishlaydi
+            "allow_zero_valuation_rate": 1  # ← Valuation Rate bo'lmasa ham ishlaydi
         })
         log_entries.append(f"📄 {item_data['item_name']}: {item_data['qty']} x {item_data['rate']} = {item_data['qty'] * item_data['rate']}")
     
     si.flags.ignore_permissions = True
+    
+    # Suppress msgprint during insert/submit
+    frappe.flags.mute_messages = True
+    
     si.insert()
     
     if submit:
         si.submit()
+    
+    frappe.flags.mute_messages = False
     
     log_entries.append("")
     log_entries.append(f"💰 Jami: {sum(i['qty'] * i['rate'] for i in items)}")
