@@ -1,9 +1,3 @@
-/**
- * Jazira App Daily Sales Import - Client Script
- * ERPNext v15 / Frappe v15
- * Version 3.0 FINAL - Clean & Bug-free
- */
-
 frappe.ui.form.on('Jazira App Daily Sales Import', {
     
     refresh(frm) {
@@ -23,28 +17,22 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
             return;
         }
         
-        // Debounce - prevent duplicate calls
         clearTimeout(frm._company_timer);
-        frm._company_timer = setTimeout(() => {
-            frm.trigger('auto_set_warehouse');
-        }, 300);
+        frm._company_timer = setTimeout(() => frm.trigger('auto_set_warehouse'), 300);
     },
     
     auto_set_warehouse(frm) {
-        // Skip if already loading
         if (frm._loading) return;
         frm._loading = true;
         
         frappe.call({
-            method: 'jazira_app.jazira_app.doctype.jazira_app_daily_sales_import.jazira_app_daily_sales_import.get_default_warehouse',
+            method: 'jazira_app.jazira_app.api.daily_sales_import.get_default_warehouse',
             args: { company: frm.doc.company },
             callback(r) {
                 frm._loading = false;
                 
-                if (r.message && r.message.source_warehouse) {
+                if (r.message?.source_warehouse) {
                     const wh = r.message.source_warehouse;
-                    
-                    // Skip if same value
                     if (frm.doc.source_warehouse === wh) {
                         frm.trigger('validate_prerequisites');
                         return;
@@ -52,10 +40,7 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                     
                     frm._skip_wh_trigger = true;
                     frm.set_value('source_warehouse', wh).then(() => {
-                        frappe.show_alert({
-                            message: __('Default warehouse: {0}', [wh]),
-                            indicator: 'green'
-                        });
+                        frappe.show_alert({ message: __('Default warehouse: {0}', [wh]), indicator: 'green' });
                         frm._skip_wh_trigger = false;
                         frm.trigger('validate_prerequisites');
                     });
@@ -63,18 +48,14 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                     frm.trigger('validate_prerequisites');
                 }
             },
-            error() {
-                frm._loading = false;
-            }
+            error() { frm._loading = false; }
         });
         
         frm.trigger('set_warehouse_filter');
     },
     
     source_warehouse(frm) {
-        if (!frm._skip_wh_trigger) {
-            frm.trigger('validate_prerequisites');
-        }
+        if (!frm._skip_wh_trigger) frm.trigger('validate_prerequisites');
     },
     
     posting_date(frm) {
@@ -95,7 +76,6 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
     
     validate_prerequisites(frm) {
         const valid = frm.doc.company && frm.doc.source_warehouse && frm.doc.posting_date;
-        
         frm.set_df_property('excel_file', 'read_only', valid ? 0 : 1);
         frm.set_df_property('excel_file', 'description', valid 
             ? 'POS hisoboti Excel fayli (.xlsx)'
@@ -107,8 +87,7 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         if (!frm.doc.stock_entry || frm.doc.status !== 'Processed') return;
         
         const links = frm.doc.stock_entry.split(',')
-            .map(s => s.trim())
-            .filter(s => s)
+            .map(s => s.trim()).filter(s => s)
             .map(se => `<a href="/app/stock-entry/${se}">${se}</a>`)
             .join('<br>');
         
@@ -134,7 +113,6 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         if (frm.doc.status === 'Processed') {
             frm.add_custom_button(__('✕ Cancel Import'), () => frm.trigger('cancel_import')).addClass('btn-danger');
             
-            // Stock Entry buttons
             if (frm.doc.stock_entry) {
                 const entries = frm.doc.stock_entry.split(',').map(s => s.trim()).filter(s => s);
                 entries.forEach((se, i) => {
@@ -163,12 +141,12 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
     },
     
     // =========================================================================
-    // PREVIEW
+    // ACTIONS
     // =========================================================================
     
     show_preview(frm) {
         frappe.call({
-            method: 'jazira_app.jazira_app.doctype.jazira_app_daily_sales_import.jazira_app_daily_sales_import.get_preview_data',
+            method: 'jazira_app.jazira_app.api.daily_sales_import.get_preview_data',
             args: { doc_name: frm.doc.name },
             freeze: true,
             freeze_message: __('Excel o\'qilmoqda...'),
@@ -176,11 +154,7 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                 if (r.message?.success) {
                     frm.trigger('render_preview', r.message);
                 } else {
-                    frappe.msgprint({
-                        title: __('Xato'),
-                        indicator: 'red',
-                        message: r.message?.message || __('Preview yuklashda xato')
-                    });
+                    frappe.msgprint({ title: __('Xato'), indicator: 'red', message: r.message?.message || 'Error' });
                 }
             }
         });
@@ -191,10 +165,9 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         const s = data.summary || {};
         
         const rows = items.map((item, i) => {
-            let badge = '';
-            if (!item.found) badge = '<span class="badge badge-danger">NOT FOUND</span>';
-            else if (item.has_bom) badge = '<span class="badge badge-primary">MANUFACTURE</span>';
-            else badge = '<span class="badge badge-secondary">DIRECT SALE</span>';
+            let badge = !item.found ? '<span class="badge badge-danger">NOT FOUND</span>'
+                : item.has_bom ? '<span class="badge badge-primary">MANUFACTURE</span>'
+                : '<span class="badge badge-secondary">DIRECT SALE</span>';
             
             return `<tr class="${item.found ? '' : 'table-danger'}">
                 <td>${i + 1}</td>
@@ -212,7 +185,6 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
             size: 'extra-large',
             fields: [{
                 fieldtype: 'HTML',
-                fieldname: 'html',
                 options: `
                     <div class="row mb-3">
                         <div class="col"><div class="card bg-primary text-white text-center p-2"><h4 class="mb-0">${s.total_items || 0}</h4><small>Jami</small></div></div>
@@ -236,13 +208,9 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         }).show();
     },
     
-    // =========================================================================
-    // VALIDATE
-    // =========================================================================
-    
     validate_items(frm) {
         frappe.call({
-            method: 'jazira_app.jazira_app.doctype.jazira_app_daily_sales_import.jazira_app_daily_sales_import.validate_excel_items',
+            method: 'jazira_app.jazira_app.api.daily_sales_import.validate_excel_items',
             args: { doc_name: frm.doc.name },
             freeze: true,
             freeze_message: __('Tekshirilmoqda...'),
@@ -259,19 +227,11 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                     });
                 } else {
                     const errors = (d.errors || []).map(e => `<li>Qator ${e.row}: ${e.error}</li>`).join('');
-                    frappe.msgprint({
-                        title: __('❌ Xatolar'),
-                        indicator: 'red',
-                        message: `<ul>${errors}</ul>`
-                    });
+                    frappe.msgprint({ title: __('❌ Xatolar'), indicator: 'red', message: `<ul>${errors}</ul>` });
                 }
             }
         });
     },
-    
-    // =========================================================================
-    // PROCESS IMPORT
-    // =========================================================================
     
     process_import(frm) {
         const dlg = new frappe.ui.Dialog({
@@ -293,7 +253,7 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                 dlg.hide();
                 
                 frappe.call({
-                    method: 'jazira_app.jazira_app.doctype.jazira_app_daily_sales_import.jazira_app_daily_sales_import.process_import',
+                    method: 'jazira_app.jazira_app.api.daily_sales_import.process_import',
                     args: { doc_name: frm.doc.name, background: false },
                     freeze: true,
                     freeze_message: __('Import jarayoni...'),
@@ -327,10 +287,6 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         dlg.show();
     },
     
-    // =========================================================================
-    // CANCEL IMPORT
-    // =========================================================================
-    
     cancel_import(frm) {
         const seCount = frm.doc.stock_entry ? frm.doc.stock_entry.split(',').filter(s => s.trim()).length : 0;
         
@@ -349,7 +305,7 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                 dlg.hide();
                 
                 frappe.call({
-                    method: 'jazira_app.jazira_app.doctype.jazira_app_daily_sales_import.jazira_app_daily_sales_import.cancel_import',
+                    method: 'jazira_app.jazira_app.api.daily_sales_import.cancel_import',
                     args: { doc_name: frm.doc.name },
                     freeze: true,
                     freeze_message: __('Bekor qilinmoqda...'),
