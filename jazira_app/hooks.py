@@ -10,6 +10,10 @@ app_license = "mit"
 
 # required_apps = []
 
+# =============================================================================
+# FIXTURES
+# =============================================================================
+
 fixtures = [
     {
         "dt": "DocType",
@@ -18,18 +22,27 @@ fixtures = [
         ]
     },
     {
-        "dt": "Client Script",
+        "dt": "Custom Field",
         "filters": [
-            ["dt", "=", "Jazira App Daily Sales Import"]
+            ["dt", "in", [
+                "Sales Invoice",
+                "Stock Entry",
+                "Item",
+                "BOM"
+            ]],
+            ["fieldname", "like", "custom_%"]
         ]
     },
     {
-        "dt": "Custom Field",
+        "dt": "Property Setter",
         "filters": [
-            ["dt", "in", ["Sales Invoice", "Stock Entry"]],
-            ["fieldname", "=", "custom_daily_sales_import"]
+            ["doc_type", "in", [
+                "Jazira App Daily Sales Import",
+                "Sales Invoice",
+                "Stock Entry"
+            ]]
         ]
-    }
+    },
 ]
 
 # Each item in the list will be shown as an app in the apps page
