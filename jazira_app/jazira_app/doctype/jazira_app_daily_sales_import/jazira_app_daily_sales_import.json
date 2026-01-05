@@ -12,14 +12,15 @@
         "column_break_1",
         "posting_date",
         "allow_negative_stock",
+        "customer",
         "section_import",
         "excel_file",
         "column_break_2",
         "status",
         "naming_series",
         "section_results",
-        "sales_invoice",
         "stock_entry",
+        "sales_invoice",
         "column_break_3",
         "external_ref",
         "section_logs",
@@ -44,11 +45,11 @@
         {
             "fieldname": "source_warehouse",
             "fieldtype": "Link",
-            "label": "Source Warehouse (Oshxona Ombori)",
+            "label": "Oshxona Ombori",
             "options": "Warehouse",
             "reqd": 1,
             "in_list_view": 1,
-            "in_standard_filter": 1
+            "description": "Xomashyo va tayyor mahsulotlar shu omborda"
         },
         {
             "fieldname": "column_break_1",
@@ -68,6 +69,14 @@
             "label": "Allow Negative Stock",
             "default": 1,
             "description": "Agar ingredient yetishmasa ham jarayon davom etsin"
+        },
+        {
+            "fieldname": "customer",
+            "fieldtype": "Link",
+            "label": "Customer",
+            "options": "Customer",
+            "default": "Walk-in Customer",
+            "description": "Sales Invoice uchun mijoz"
         },
         {
             "fieldname": "section_import",
@@ -109,17 +118,17 @@
             "collapsible": 1
         },
         {
+            "fieldname": "stock_entry",
+            "fieldtype": "Small Text",
+            "label": "Stock Entries (Manufacture)",
+            "read_only": 1,
+            "description": "Har bir BOM li item uchun alohida Manufacture Stock Entry"
+        },
+        {
             "fieldname": "sales_invoice",
             "fieldtype": "Link",
             "label": "Sales Invoice",
             "options": "Sales Invoice",
-            "read_only": 1
-        },
-        {
-            "fieldname": "stock_entry",
-            "fieldtype": "Link",
-            "label": "Stock Entry (Material Issue)",
-            "options": "Stock Entry",
             "read_only": 1
         },
         {
