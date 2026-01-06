@@ -227,6 +227,14 @@ def _process_import_sync(doc_name: str) -> Dict:
     """
     doc = frappe.get_doc("Jazira App Daily Sales Import", doc_name)
     
+    # Log helper - har safar db_set qiladi
+    log_lines = []
+    def log(msg):
+        log_lines.append(msg)
+        current_log = "\n".join(log_lines)
+        frappe.db.set_value("Jazira App Daily Sales Import", doc_name, "import_log", current_log, update_modified=False)
+        frappe.db.commit()  # Har bir log yozilganda commit
+    
     # Check idempotency
     if doc.status == "Processed":
         return {
@@ -237,10 +245,17 @@ def _process_import_sync(doc_name: str) -> Dict:
     # Update status
     doc.db_set("status", "Processing")
     doc.db_set("error_log", "")
-    doc.db_set("import_log", f"Import boshlandi: {nowdate()}\n")
+    
+    log("=" * 50)
+    log(f"IMPORT BOSHLANDI: {nowdate()}")
+    log(f"Company: {doc.company}")
+    log(f"Warehouse: {doc.source_warehouse}")
+    log(f"Date: {doc.posting_date}")
+    log("=" * 50)
     
     try:
         # 1. Validate prerequisites
+        log("\n📋 1. Tekshiruvlar...")
         validation = validate_import_prerequisites(
             doc.company,
             doc.source_warehouse,
@@ -248,34 +263,45 @@ def _process_import_sync(doc_name: str) -> Dict:
         )
         if not validation["success"]:
             raise Exception(validation["message"])
+        log("   ✅ Tekshiruvlar muvaffaqiyatli")
         
         # 2. Read Excel
+        log("\n📊 2. Excel o'qilmoqda...")
         items = excel_service.read_sales_report(doc.excel_file)
         if not items:
             raise Exception(_("Excel faylda sotuv topilmadi"))
+        log(f"   ✅ {len(items)} ta qator o'qildi")
         
         # 3. Check duplicate
+        log("\n🔍 3. Dublikat tekshiruvi...")
         excel_hash = calculate_file_hash(doc.excel_file)
         duplicate = check_duplicate_import(excel_hash, doc_name)
         if duplicate["is_duplicate"]:
             raise Exception(
                 _("Bu Excel avval import qilingan: {0}").format(duplicate["existing_doc"])
             )
+        log("   ✅ Dublikat yo'q")
         
         # 4. Validate and match items
+        log("\n🔗 4. Itemlar tekshirilmoqda...")
         item_validation = validate_items_exist(items)
         if item_validation["errors"]:
             error_msgs = [e["error"] for e in item_validation["errors"]]
             raise Exception("\n".join(error_msgs))
         
         valid_items = item_validation["valid_items"]
+        log(f"   ✅ {len(valid_items)} ta item topildi")
         
         # 5. Categorize by BOM
+        log("\n📦 5. BOM kategoriyalash...")
         categorized = bom_service.categorize_items_by_bom(valid_items)
         items_with_bom = categorized["with_bom"]
         items_without_bom = categorized["without_bom"]
+        log(f"   📦 BOM bilan: {len(items_with_bom)} ta")
+        log(f"   📄 BOMsiz: {len(items_without_bom)} ta")
         
         # 6. Create Manufacture Stock Entries
+        log("\n🏭 6. Manufacture Stock Entries...")
         se_names = []
         if items_with_bom:
             config = StockEntryConfig(
@@ -289,8 +315,14 @@ def _process_import_sync(doc_name: str) -> Dict:
             )
             if se_names:
                 doc.db_set("stock_entry", ", ".join(se_names))
+                for i, se in enumerate(se_names, 1):
+                    item_name = items_with_bom[i-1].get("item_name", "")
+                    log(f"   ✅ SE #{i}: {se} ({item_name})")
+        else:
+            log("   ⏭️ BOM li item yo'q - SKIP")
         
         # 7. Create Sales Invoice
+        log("\n📄 7. Sales Invoice yaratilmoqda...")
         invoice_config = InvoiceConfig(
             company=doc.company,
             warehouse=doc.source_warehouse,
@@ -301,12 +333,30 @@ def _process_import_sync(doc_name: str) -> Dict:
             valid_items, invoice_config, submit=True
         )
         doc.db_set("sales_invoice", si_name)
+        log(f"   ✅ Sales Invoice: {si_name}")
+        
+        # Items list
+        log("\n📋 ITEMS:")
+        for item in valid_items:
+            bom_badge = "🏭" if item.get("has_bom") else "📦"
+            log(f"   {bom_badge} {item['item_name']}: {item['qty']} x {item['rate']:,.0f}")
         
         # 8. Finalize
         doc.db_set("external_ref", excel_hash)
         doc.db_set("status", "Processed")
         
         totals = invoice_service.calculate_totals(valid_items)
+        
+        log("\n" + "=" * 50)
+        log("✅ IMPORT MUVAFFAQIYATLI YAKUNLANDI")
+        log("=" * 50)
+        log(f"📊 Jami itemlar: {len(valid_items)}")
+        log(f"🏭 Manufacture: {len(items_with_bom)}")
+        log(f"📦 Direct Sale: {len(items_without_bom)}")
+        log(f"💰 Jami summa: {totals['total_amount']:,.0f} UZS")
+        log(f"📄 Sales Invoice: {si_name}")
+        if se_names:
+            log(f"🏭 Stock Entries: {', '.join(se_names)}")
         
         frappe.db.commit()
         
@@ -323,6 +373,7 @@ def _process_import_sync(doc_name: str) -> Dict:
         
     except Exception as e:
         frappe.db.rollback()
+        log(f"\n❌ XATO: {str(e)}")
         doc.db_set("status", "Failed")
         doc.db_set("error_log", str(e))
         frappe.log_error(f"Import Error: {doc_name}\n{str(e)}", "Daily Sales Import")
