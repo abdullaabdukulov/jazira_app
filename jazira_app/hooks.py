@@ -43,6 +43,14 @@ fixtures = [
             ]]
         ]
     },
+    {
+        "dt": "Party Type",
+        "filters": [["party_type", "in", ["Расходы", "Прочее лицо"]]]
+    }
+]
+
+after_migrate = [
+    "jazira_app.jazira_app.setup.kassa_setup.create_party_types"
 ]
 
 # Each item in the list will be shown as an app in the apps page
@@ -78,10 +86,6 @@ fixtures = [
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {
-    "Jazira App Daily Sales Import": "public/js/jazira_app_daily_sales_import.js"
-}
-
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
