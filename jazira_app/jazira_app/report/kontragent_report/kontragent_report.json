@@ -1,0 +1,18 @@
+{
+    "add_total_row": 0,
+    "columns": [],
+    "disabled": 0,
+    "docstatus": 0,
+    "doctype": "Report",
+    "is_standard": "Yes",
+    "module": "Jazira App",
+    "name": "Kontragent Report",
+    "ref_doctype": "GL Entry",
+    "report_name": "Kontragent Report",
+    "report_type": "Script Report",
+    "roles": [
+        {"role": "Accounts Manager"},
+        {"role": "Accounts User"},
+        {"role": "System Manager"}
+    ]
+}
