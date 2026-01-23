@@ -1,6 +1,6 @@
-// Akt Sverka Report Filters
+// Kontragent Otchet Report
 
-frappe.query_reports["Akt Sverka"] = {
+frappe.query_reports["Kontragent Otchet"] = {
     filters: [
         {
             fieldname: "from_date",
@@ -21,7 +21,7 @@ frappe.query_reports["Akt Sverka"] = {
             label: __("Kontragent turi"),
             fieldtype: "Link",
             options: "Party Type",
-            default: "Supplier",
+            default: "Customer",
             reqd: 1,
             on_change: function() {
                 frappe.query_report.set_filter_value("party", "");
@@ -31,29 +31,16 @@ frappe.query_reports["Akt Sverka"] = {
             fieldname: "party",
             label: __("Kontragent"),
             fieldtype: "Dynamic Link",
-            options: "party_type",
-            reqd: 1
+            options: "party_type"
         }
     ],
     
     formatter: function(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
         
-        if (data) {
-            // Boshlang'ich qoldiq - ko'k
-            if (data.is_opening) {
-                value = `<span style="color:#1890ff;font-weight:600;">${value}</span>`;
-            }
-            
-            // Jami - sariq fon
-            if (data.is_total) {
-                value = `<span style="font-weight:700;background:#fff3cd;padding:2px 6px;">${value}</span>`;
-            }
-            
-            // Manfiy qoldiq - qizil
-            if (column.fieldname === "balance" && data.balance < 0) {
-                value = `<span style="color:#f5222d;">${value}</span>`;
-            }
+        // JAMI qatori - birinchi qator
+        if (data && data.bold) {
+            value = `<span style="font-weight:bold;background:#fffacd;padding:3px 8px;display:inline-block;">${value}</span>`;
         }
         
         return value;
