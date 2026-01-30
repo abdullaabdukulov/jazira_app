@@ -4,66 +4,29 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allow manual trigger
-
-env:
-  DEPLOY_SCRIPT: "/home/frappe/deploy/deploy.sh"
 
 jobs:
   deploy:
-    name: Deploy to Production Server
+    name: Deploy via SSH
     runs-on: ubuntu-latest
     
-    # Prevent concurrent deployments
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Validate secrets
-        run: |
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            echo "Error: VPS_HOST secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
-            echo "Error: SSH_PRIVATE_KEY secret is not set"
-            exit 1
-          fi
-          echo "All required secrets are configured"
-      
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p ${{ secrets.VPS_PORT }} -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
-      
-      - name: Deploy to Server
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          envs: BENCH_PATH,SITE_NAME
+          script: |
+            export BENCH_PATH="${{ secrets.BENCH_PATH }}"
+            export SITE_NAME="${{ secrets.SITE_NAME }}"
+            bash /home/frappe/deploy/deploy.sh
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
           BENCH_PATH: ${{ secrets.BENCH_PATH }}
           SITE_NAME: ${{ secrets.SITE_NAME }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -p $VPS_PORT $VPS_USER@$VPS_HOST \
-            "BENCH_PATH='$BENCH_PATH' SITE_NAME='$SITE_NAME' bash ${{ env.DEPLOY_SCRIPT }}"
-      
-      - name: Verify Deployment
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -p $VPS_PORT $VPS_USER@$VPS_HOST \
-            "curl -sf http://localhost/api/method/frappe.ping || exit 1"
-          echo "✅ Deployment verified successfully"
-      
-      - name: Cleanup
-        if: always()
-        run: |
-          rm -f ~/.ssh/id_ed25519
