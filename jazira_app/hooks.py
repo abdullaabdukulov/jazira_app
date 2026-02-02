@@ -13,7 +13,21 @@ app_license = "mit"
 # =============================================================================
 # FIXTURES
 # =============================================================================
+app_name = "jazira_app"
+app_title = "Jazira App"
+app_publisher = "Abdulla Abdukulov"
+app_description = "Jazira Custom App"
+app_email = "abduqulovabdulla3108@gmail.com"
+app_license = "mit"
 
+# Apps
+# ------------------
+
+# required_apps = []
+
+# =============================================================================
+# FIXTURES
+# =============================================================================
 fixtures = [
     {
         "dt": "DocType",
@@ -46,13 +60,24 @@ fixtures = [
     {
         "dt": "Party Type",
         "filters": [["party_type", "in", ["Расходы", "Прочее лицо"]]]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "=", "Employee Checkin"],
+            ["fieldname", "in", [
+                "dahua_event_id",
+                "dahua_attendance_state",
+                "checkin_source",
+                "checkin_reason"
+            ]]
+        ]
     }
 ]
 
 after_migrate = [
     "jazira_app.jazira_app.setup.kassa_setup.create_party_types"
 ]
-
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
