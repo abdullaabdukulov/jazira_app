@@ -76,7 +76,8 @@ fixtures = [
 ]
 
 after_migrate = [
-    "jazira_app.jazira_app.setup.kassa_setup.create_party_types"
+    "jazira_app.jazira_app.setup.kassa_setup.create_party_types",
+    "jazira_app.jazira_app.setup.manager_setup.run_manager_setup"
 ]
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
