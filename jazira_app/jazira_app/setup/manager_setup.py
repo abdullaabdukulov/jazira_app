@@ -1,170 +1,231 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026, Jazira App
 # License: MIT
+"""
+Manager Setup - Filial Boshqaruvi workspace + permissions
+"""
 
 import frappe
+import json
+
 
 def run_manager_setup():
-    """
-    Ushbu funksiya 'bench migrate' paytida ishga tushadi.
-    Optimallashtirilgan versiya: Agar sozlamalar to'g'ri bo'lsa, qayta yozmaydi.
-    """
+    """Hook: jazira_app.jazira_app.setup.manager_setup.run_manager_setup"""
+    print("\n" + "=" * 60)
+    print("JAZIRA APP: Manager Setup")
     print("=" * 60)
-    print("JAZIRA APP: Manager va Ruxsatlarni tekshirish...")
-    print("=" * 60)
-
-    create_shift_types()
-    create_roles()
-    setup_users_and_permissions()
+    
+    cleanup_old_workspaces()
+    create_filial_workspace()
+    setup_managers()
+    hide_hr_workspaces()
     
     frappe.db.commit()
-    print("✅ JAZIRA SETUP: Tekshiruv yakunlandi!\n")
+    print("\n✅ Setup completed!")
+    print("=" * 60 + "\n")
 
-def create_shift_types():
-    """Smenalarni yaratish (faqat yo'q bo'lsa)"""
-    shifts = [
-        {"name": "Smena 08:00-17:00", "start": "08:00:00", "end": "17:00:00"},
-        {"name": "Smena 08:00-18:00", "start": "08:00:00", "end": "18:00:00"},
-        {"name": "Smena 12:00-18:00", "start": "12:00:00", "end": "18:00:00"},
-        {"name": "Smena 12:00-01:00", "start": "12:00:00", "end": "01:00:00"},
-        {"name": "Smena 17:00-01:00", "start": "17:00:00", "end": "01:00:00"},
-        {"name": "Smena 18:00-01:00", "start": "18:00:00", "end": "01:00:00"},
-    ]
 
-    if not frappe.db.exists("DocType", "Shift Type"):
-        return
-
-    for shift in shifts:
-        if not frappe.db.exists("Shift Type", shift["name"]):
-            try:
-                doc = frappe.new_doc("Shift Type")
-                doc.name = shift["name"]
-                doc.shift_type_name = shift["name"]
-                doc.start_time = shift["start"]
-                doc.end_time = shift["end"]
-                doc.flags.ignore_permissions = True
-                doc.flags.ignore_mandatory = True
-                doc.insert()
-                print(f"  + Smena yaratildi: {shift['name']}")
-            except Exception as e:
-                print(f"  ⚠️ Smena xatosi: {e}")
-
-def create_roles():
-    """Rollar mavjudligini tekshirish"""
-    roles = ["HR User", "Employee", "Attendance Manager", "Shift Manager", "Stock User"]
+def cleanup_old_workspaces():
+    """O'chirish kerak bo'lgan workspacelar"""
+    print("\n🗑️  Cleaning up old workspaces...")
     
-    for r in roles:
-        if not frappe.db.exists("Role", r):
-            try:
-                new_role = frappe.new_doc("Role")
-                new_role.role_name = r
-                new_role.desk_access = 1 
-                new_role.insert(ignore_permissions=True)
-                print(f"  + Rol yaratildi: {r}")
-            except Exception as e:
-                print(f"  ⚠️ Rol xatosi ({r}): {e}")
-
-def setup_users_and_permissions():
-    """Managerlarni faqat kerak bo'lsa sozlash"""
-    managers_data = [
-        {"email": "admin_jazira@jazira.uz", "first_name": "Jazira Bosh Manager", "company": "Jazira", "is_parent_manager": True},
-        {"email": "manager_xalq@jazira.uz", "first_name": "Xalq Banki Manager", "company": "Jazira Xalq Banki", "is_parent_manager": False},
-        {"email": "manager_saripul@jazira.uz", "first_name": "Saripul Manager", "company": "Jazira Saripul", "is_parent_manager": False},
-        {"email": "manager_smart@jazira.uz", "first_name": "Smart Manager", "company": "Jazira Smart", "is_parent_manager": False},
-        {"email": "manager_sklad@jazira.uz", "first_name": "Sklad Manager", "company": "Jazira sklad", "is_parent_manager": False},
+    to_delete = [
+        "Xodimlar",
+        "Xodimlar Boshqaruvi",
     ]
-
-    roles_to_assign = ["HR User", "Employee", "Attendance Manager", "Shift Manager", "Stock User"]
-    default_pass = "Jazira@2024!"
-
-    for user_data in managers_data:
-        email = user_data["email"]
-        target_company = user_data["company"]
-        is_parent = user_data["is_parent_manager"]
-
-        # Kompaniya nomini aniqlashtirish
-        real_company_name = frappe.db.get_value("Company", target_company, "name")
-        if not real_company_name:
-            continue
-
-        # ---------------------------------------------------------
-        # 1. USERNI TEKSHIRISH
-        # ---------------------------------------------------------
-        if frappe.db.exists("User", email):
-            # User bor, uning parolini o'zgartirmaymiz!
-            # Lekin rollarini tekshiramiz
-            user_doc = frappe.get_doc("User", email)
-            current_roles = [d.role for d in user_doc.roles]
-            dirty_roles = False
-            
-            for r in roles_to_assign:
-                if r not in current_roles:
-                    user_doc.append("roles", {"role": r})
-                    dirty_roles = True
-            
-            if dirty_roles:
-                user_doc.save(ignore_permissions=True)
-                print(f"  ↻ Rollar yangilandi: {email}")
-        else:
-            # User yo'q, yangi yaratamiz
+    
+    for ws_name in to_delete:
+        if frappe.db.exists("Workspace", ws_name):
             try:
-                u = frappe.new_doc("User")
-                u.email = email
-                u.first_name = user_data["first_name"]
-                u.enabled = 1
-                u.send_welcome_email = 0
-                u.new_password = default_pass
-                u.flags.ignore_password_policy = True 
-                
-                # Rollarni shu yerning o'zida qo'shamiz
-                for r in roles_to_assign:
-                    u.append("roles", {"role": r})
-                
-                u.insert(ignore_permissions=True)
-                print(f"  ✓ Yangi user yaratildi: {email}")
-            except Exception as e:
-                print(f"  ⚠️ User xatosi ({email}): {e}")
-                continue
+                frappe.delete_doc("Workspace", ws_name, force=True, ignore_permissions=True)
+                print(f"  ✓ Deleted: {ws_name}")
+            except:
+                frappe.db.sql("DELETE FROM `tabWorkspace` WHERE name = %s", ws_name)
+                print(f"  ✓ Force deleted: {ws_name}")
+    
+    frappe.db.commit()
 
-        # ---------------------------------------------------------
-        # 2. RUXSATLARNI (PERMISSION) TEKSHIRISH
-        # ---------------------------------------------------------
+
+def create_filial_workspace():
+    """Filial Boshqaruvi - 4 ta shortcut"""
+    ws_name = "Filial Boshqaruvi"
+    
+    print(f"\n🖥️  Creating workspace: {ws_name}")
+    
+    # Delete if exists
+    if frappe.db.exists("Workspace", ws_name):
+        frappe.delete_doc("Workspace", ws_name, force=True, ignore_permissions=True)
+        frappe.db.commit()
+    
+    # Content layout
+    content = [
+        {"type": "spacer", "data": {"col": 12}},
+        {"type": "shortcut", "data": {"shortcut_name": "Xodimlar", "col": 3}},
+        {"type": "shortcut", "data": {"shortcut_name": "Kunlik Hisobot", "col": 3}},
+        {"type": "shortcut", "data": {"shortcut_name": "Checkin", "col": 3}},
+        {"type": "shortcut", "data": {"shortcut_name": "Checkin Report", "col": 3}},
+    ]
+    
+    ws = frappe.new_doc("Workspace")
+    ws.name = ws_name
+    ws.label = ws_name
+    ws.title = "Filial Boshqaruvi"
+    ws.icon = "users"
+    ws.module = "Jazira App"
+    ws.public = 1
+    ws.sequence_id = 1
+    ws.content = json.dumps(content)
+    
+    # Shortcuts
+    ws.append("shortcuts", {
+        "label": "Xodimlar",
+        "type": "DocType",
+        "link_to": "Employee",
+        "color": "Blue"
+    })
+    
+    ws.append("shortcuts", {
+        "label": "Kunlik Hisobot",
+        "type": "Report",
+        "link_to": "Employee Daily Hours",
+        "color": "Green",
+        "is_query_report": 1
+    })
+    
+    ws.append("shortcuts", {
+        "label": "Checkin",
+        "type": "DocType",
+        "link_to": "Employee Checkin",
+        "color": "Orange"
+    })
+    
+    ws.append("shortcuts", {
+        "label": "Checkin Report",
+        "type": "DocType",
+        "link_to": "Employee Checkin",
+        "color": "Yellow"
+    })
+    
+    # Sidebar
+    ws.append("links", {"label": "Asosiy", "type": "Card Break"})
+    ws.append("links", {"label": "Xodimlar", "type": "Link", "link_type": "DocType", "link_to": "Employee"})
+    ws.append("links", {"label": "Kunlik Hisobot", "type": "Link", "link_type": "Report", "link_to": "Employee Daily Hours"})
+    ws.append("links", {"label": "Checkin", "type": "Link", "link_type": "DocType", "link_to": "Employee Checkin"})
+    
+    ws.flags.ignore_permissions = True
+    ws.flags.ignore_links = True
+    ws.insert()
+    
+    print(f"  ✓ Created: {ws_name}")
+
+
+def setup_managers():
+    """Manager users + HR Manager role + Company permission"""
+    print("\n👤 Setting up managers...")
+    
+    managers = [
+        ("admin_jazira@jazira.uz", "Bosh Manager", "Jazira", True),
+        ("manager_xalq@jazira.uz", "Xalq Bank Manager", "Jazira Xalq Banki", False),
+        ("manager_saripul@jazira.uz", "Saripul Manager", "Jazira Saripul", False),
+        ("manager_smart@jazira.uz", "Smart Manager", "Jazira Smart", False),
+        ("manager_sklad@jazira.uz", "Sklad Manager", "Jazira Sklad", False),
+    ]
+    
+    password = "Jazira@2024!"
+    
+    # Kerakli rollar - HR Manager permission beradi
+    required_roles = ["HR Manager", "HR User"]
+    
+    # Bloklash kerak modullar
+    all_modules = frappe.get_all("Module Def", pluck="name")
+    allowed_modules = ["Jazira App", "HR", "Setup"]
+    
+    for email, name, company, is_admin in managers:
         
-        # Parent manager uchun (Cheklov bo'lmasligi kerak)
-        if is_parent:
-            # Agar cheklov bo'lsa, olib tashlaymiz
-            existing_perm = frappe.db.exists("User Permission", {"user": email, "allow": "Company"})
-            if existing_perm:
-                frappe.db.sql("DELETE FROM `tabUser Permission` WHERE user=%s AND allow='Company'", (email,))
-                print(f"  🔓 {email}: Eski cheklovlar olib tashlandi (Parent).")
-            else:
-                # Jim turamiz, chunki hammasi joyida
-                pass
-        
-        # Filial manager uchun (Cheklov bo'lishi kerak)
+        # 1. User yaratish
+        if not frappe.db.exists("User", email):
+            user = frappe.new_doc("User")
+            user.email = email
+            user.first_name = name
+            user.enabled = 1
+            user.send_welcome_email = 0
+            user.new_password = password
+            user.flags.ignore_password_policy = True
+            user.insert(ignore_permissions=True)
+            print(f"  ✓ Created: {email}")
         else:
-            # Aynan shu kompaniya uchun ruxsat bormi?
-            is_correct_perm_exists = frappe.db.exists("User Permission", {
-                "user": email,
-                "allow": "Company",
-                "for_value": real_company_name
-            })
+            print(f"  - Exists: {email}")
+        
+        # 2. Rollarni o'rnatish
+        user = frappe.get_doc("User", email)
+        existing_roles = [r.role for r in user.roles]
+        
+        for role in required_roles:
+            if role not in existing_roles:
+                user.append("roles", {"role": role})
+        
+        # 3. Modullarni bloklash (admin uchun emas)
+        if not is_admin:
+            user.set("block_modules", [])
+            for module in all_modules:
+                if module not in allowed_modules:
+                    user.append("block_modules", {"module": module})
+        
+        user.flags.ignore_permissions = True
+        user.save()
+        
+        # 4. Company permission
+        frappe.db.sql(
+            "DELETE FROM `tabUser Permission` WHERE user = %s AND allow = 'Company'",
+            email
+        )
+        
+        if not is_admin:
+            perm = frappe.new_doc("User Permission")
+            perm.user = email
+            perm.allow = "Company"
+            perm.for_value = company
+            perm.is_default = 1
+            perm.apply_to_all_doctypes = 1
+            perm.flags.ignore_permissions = True
+            perm.insert()
+            print(f"  🔒 {email} → {company}")
+        else:
+            print(f"  🔓 {email} → full access")
 
-            if is_correct_perm_exists:
-                # Ruxsat allaqachon to'g'ri, hech narsa qilmaymiz
-                pass
-            else:
-                # Eski noto'g'ri ruxsatlarni tozalash
-                frappe.db.sql("DELETE FROM `tabUser Permission` WHERE user=%s AND allow='Company'", (email,))
-                
-                # Yangisini qo'shish
-                try:
-                    perm = frappe.new_doc("User Permission")
-                    perm.user = email
-                    perm.allow = "Company"
-                    perm.for_value = real_company_name
-                    perm.is_default = 1
-                    perm.insert(ignore_permissions=True, ignore_links=True)
-                    print(f"  🔒 Ruxsat o'rnatildi: {email} -> {real_company_name}")
-                except Exception as e:
-                     print(f"  ⚠️ Ruxsat xatosi ({email}): {e}")
+
+def hide_hr_workspaces():
+    """Ortiqcha workspacelarni yashirish"""
+    print("\n🙈 Hiding unnecessary workspaces...")
+    
+    hr_workspaces = [
+        # HR modules
+        "HR",
+        "Recruitment",
+        "Employee Lifecycle", 
+        "Performance",
+        "Shift & Attendance",
+        "Expense Claims",
+        "Leaves",
+        "Payroll",
+        # System
+        "Home",
+        "ERPNext Settings",
+        "Settings",
+        "Build",
+        "Customization",
+        "Integrations",
+        "Tools",
+        "Users",
+    ]
+    
+    for ws_name in hr_workspaces:
+        if frappe.db.exists("Workspace", ws_name):
+            try:
+                ws = frappe.get_doc("Workspace", ws_name)
+                ws.public = 0
+                ws.flags.ignore_permissions = True
+                ws.save()
+                print(f"  ✓ Hidden: {ws_name}")
+            except Exception as e:
+                print(f"  ⚠ {ws_name}: {e}")
