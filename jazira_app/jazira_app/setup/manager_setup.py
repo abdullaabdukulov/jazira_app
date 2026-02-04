@@ -2,147 +2,388 @@
 # Copyright (c) 2026, Jazira App
 # License: MIT
 """
-Manager Setup - Filial Boshqaruvi workspace + permissions
+Manager Setup - Filial boshqaruvi
+
+Har bir manager faqat:
+1. O'z filiali xodimlarini ko'radi
+2. 3 ta sahifaga dostup: Xodimlar, Kunlik Hisobot, Davriy Hisobot
+3. Qolgan barcha narsa yashirin
+
+Bosh Manager - hammaga dostup
 """
 
 import frappe
 import json
 
 
-def run_manager_setup():
-    """Hook: jazira_app.jazira_app.setup.manager_setup.run_manager_setup"""
-    print("\n" + "=" * 60)
-    print("JAZIRA APP: Manager Setup")
-    print("=" * 60)
-    
-    cleanup_old_workspaces()
-    create_filial_workspace()
-    setup_managers()
-    hide_hr_workspaces()
-    
-    frappe.db.commit()
-    print("\n✅ Setup completed!")
-    print("=" * 60 + "\n")
+# ═══════════════════════════════════════════════════════════════════════════════
+# KONFIGURATSIYA
+# ═══════════════════════════════════════════════════════════════════════════════
 
+MANAGERS = [
+    {
+        "email": "admin@jazira.uz",
+        "name": "Bosh Manager",
+        "company": None,  # None = barcha kompaniyalar
+        "is_admin": True,
+        "password": "Jazira@2024!"
+    },
+    {
+        "email": "manager_xalqbank@jazira.uz",
+        "name": "Xalq Bank Manager",
+        "company": "Jazira Xalq Bank",
+        "is_admin": False,
+        "password": "Jazira@2024!"
+    },
+    {
+        "email": "manager_saripul@jazira.uz",
+        "name": "Saripul Manager", 
+        "company": "Jazira Saripul",
+        "is_admin": False,
+        "password": "Jazira@2024!"
+    },
+    {
+        "email": "manager_smart@jazira.uz",
+        "name": "Smart Manager",
+        "company": "Jazira Smart",
+        "is_admin": False,
+        "password": "Jazira@2024!"
+    },
+    {
+        "email": "manager_sklad@jazira.uz",
+        "name": "Sklad Manager",
+        "company": "Jazira Sklad",
+        "is_admin": False,
+        "password": "Jazira@2024!"
+    },
+]
+
+# Managerlar foydalana oladigan modullar
+ALLOWED_MODULES = ["Jazira App", "HR", "Setup"]
+
+# Yashiriladigan workspacelar
+WORKSPACES_TO_HIDE = [
+    # HR modules
+    "HR",
+    "Recruitment",
+    "Employee Lifecycle",
+    "Performance",
+    "Shift & Attendance",
+    "Expense Claims",
+    "Leaves",
+    "Payroll",
+    # Accounting
+    "Accounting",
+    "Receivables",
+    "Payables",
+    # Stock
+    "Stock",
+    "Buying",
+    "Selling",
+    # Manufacturing
+    "Manufacturing",
+    # System
+    "Home",
+    "ERPNext Settings",
+    "Settings",
+    "Build",
+    "Customization",
+    "Integrations",
+    "Tools",
+    "Users",
+    "Website",
+    "CRM",
+    "Support",
+    "Projects",
+    "Assets",
+    "Quality",
+]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN FUNCTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_manager_setup():
+    """
+    Hook: jazira_app.jazira_app.setup.manager_setup.run_manager_setup
+    
+    after_migrate da chaqiriladi
+    """
+    print("\n" + "=" * 70)
+    print("  🏢 JAZIRA APP: MANAGER SETUP")
+    print("=" * 70)
+    
+    try:
+        # 1. Eski workspacelarni o'chirish
+        cleanup_old_workspaces()
+        
+        # 2. Yangi workspace yaratish
+        create_filial_workspace()
+        
+        # 3. Manager rolini yaratish/sozlash
+        setup_manager_role()
+        
+        # 4. Managerlarni yaratish
+        setup_managers()
+        
+        # 5. Ortiqcha workspacelarni yashirish
+        hide_unnecessary_workspaces()
+        
+        frappe.db.commit()
+        
+        print("\n" + "=" * 70)
+        print("  ✅ SETUP MUVAFFAQIYATLI YAKUNLANDI!")
+        print("=" * 70 + "\n")
+        
+    except Exception as e:
+        print(f"\n❌ Xatolik: {e}")
+        frappe.log_error(title="Manager Setup Error", message=str(e))
+        raise
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WORKSPACE
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def cleanup_old_workspaces():
-    """O'chirish kerak bo'lgan workspacelar"""
-    print("\n🗑️  Cleaning up old workspaces...")
+    """Eski workspacelarni o'chirish"""
+    print("\n🗑️  Eski workspacelarni tozalash...")
     
-    to_delete = [
+    old_names = [
         "Xodimlar",
-        "Xodimlar Boshqaruvi",
+        "Xodimlar Boshqaruvi", 
+        "Filial Boshqaruvi",
+        "Manager Panel",
     ]
     
-    for ws_name in to_delete:
+    for ws_name in old_names:
         if frappe.db.exists("Workspace", ws_name):
             try:
                 frappe.delete_doc("Workspace", ws_name, force=True, ignore_permissions=True)
-                print(f"  ✓ Deleted: {ws_name}")
-            except:
+                print(f"   ✓ O'chirildi: {ws_name}")
+            except Exception:
                 frappe.db.sql("DELETE FROM `tabWorkspace` WHERE name = %s", ws_name)
-                print(f"  ✓ Force deleted: {ws_name}")
+                print(f"   ✓ Majburiy o'chirildi: {ws_name}")
     
     frappe.db.commit()
 
 
 def create_filial_workspace():
-    """Filial Boshqaruvi - 4 ta shortcut"""
-    ws_name = "Filial Boshqaruvi"
+    """Yangi biznes-do'stona workspace yaratish"""
+    ws_name = "Xodimlar Boshqaruvi"
     
-    print(f"\n🖥️  Creating workspace: {ws_name}")
+    print(f"\n🖥️  Workspace yaratilmoqda: {ws_name}")
     
-    # Delete if exists
+    # Mavjud bo'lsa o'chirish
     if frappe.db.exists("Workspace", ws_name):
         frappe.delete_doc("Workspace", ws_name, force=True, ignore_permissions=True)
         frappe.db.commit()
     
-    # Content layout
+    # Workspace content (ko'rinish)
     content = [
+        {
+            "type": "header",
+            "data": {
+                "text": "<b>👋 Xush kelibsiz!</b>",
+                "col": 12
+            }
+        },
+        {
+            "type": "paragraph", 
+            "data": {
+                "text": "Quyidagi bo'limlardan foydalaning:",
+                "col": 12
+            }
+        },
         {"type": "spacer", "data": {"col": 12}},
-        {"type": "shortcut", "data": {"shortcut_name": "Xodimlar", "col": 3}},
-        {"type": "shortcut", "data": {"shortcut_name": "Kunlik Hisobot", "col": 3}},
-        {"type": "shortcut", "data": {"shortcut_name": "Checkin", "col": 3}},
-        {"type": "shortcut", "data": {"shortcut_name": "Checkin Report", "col": 3}},
+        {"type": "shortcut", "data": {"shortcut_name": "Xodimlar Ro'yxati", "col": 4}},
+        {"type": "shortcut", "data": {"shortcut_name": "Kunlik Hisobot", "col": 4}},
+        {"type": "shortcut", "data": {"shortcut_name": "Davriy Hisobot", "col": 4}},
     ]
     
     ws = frappe.new_doc("Workspace")
     ws.name = ws_name
     ws.label = ws_name
-    ws.title = "Filial Boshqaruvi"
+    ws.title = "Xodimlar Boshqaruvi"
     ws.icon = "users"
     ws.module = "Jazira App"
     ws.public = 1
     ws.sequence_id = 1
     ws.content = json.dumps(content)
     
-    # Shortcuts
+    # ═══════════════════════════════════════════════════════════════
+    # SHORTCUTS (kartochkalar)
+    # ═══════════════════════════════════════════════════════════════
+    
     ws.append("shortcuts", {
-        "label": "Xodimlar",
+        "label": "Xodimlar Ro'yxati",
         "type": "DocType",
         "link_to": "Employee",
-        "color": "Blue"
+        "icon": "users",
+        "color": "#2196F3",  # Ko'k
+        "format": "{}"
     })
     
     ws.append("shortcuts", {
         "label": "Kunlik Hisobot",
         "type": "Report",
         "link_to": "Employee Daily Hours",
-        "color": "Green",
+        "icon": "calendar",
+        "color": "#4CAF50",  # Yashil
         "is_query_report": 1
     })
     
     ws.append("shortcuts", {
-        "label": "Checkin",
-        "type": "DocType",
-        "link_to": "Employee Checkin",
-        "color": "Orange"
+        "label": "Davriy Hisobot",
+        "type": "Report", 
+        "link_to": "Employee Period Hours",
+        "icon": "trending-up",
+        "color": "#FF9800",  # Sariq
+        "is_query_report": 1
     })
     
-    ws.append("shortcuts", {
-        "label": "Checkin Report",
-        "type": "DocType",
-        "link_to": "Employee Checkin",
-        "color": "Yellow"
+    # ═══════════════════════════════════════════════════════════════
+    # SIDEBAR (chap menyu)
+    # ═══════════════════════════════════════════════════════════════
+    
+    # Asosiy bo'lim
+    ws.append("links", {
+        "label": "📊 Hisobotlar",
+        "type": "Card Break"
     })
     
-    # Sidebar
-    ws.append("links", {"label": "Asosiy", "type": "Card Break"})
-    ws.append("links", {"label": "Xodimlar", "type": "Link", "link_type": "DocType", "link_to": "Employee"})
-    ws.append("links", {"label": "Kunlik Hisobot", "type": "Link", "link_type": "Report", "link_to": "Employee Daily Hours"})
-    ws.append("links", {"label": "Checkin", "type": "Link", "link_type": "DocType", "link_to": "Employee Checkin"})
+    ws.append("links", {
+        "label": "Kunlik ish vaqti",
+        "type": "Link",
+        "link_type": "Report",
+        "link_to": "Employee Daily Hours",
+        "icon": "calendar"
+    })
+    
+    ws.append("links", {
+        "label": "Davriy hisobot",
+        "type": "Link",
+        "link_type": "Report", 
+        "link_to": "Employee Period Hours",
+        "icon": "bar-chart-2"
+    })
+    
+    # Xodimlar bo'limi
+    ws.append("links", {
+        "label": "👥 Xodimlar",
+        "type": "Card Break"
+    })
+    
+    ws.append("links", {
+        "label": "Xodimlar ro'yxati",
+        "type": "Link",
+        "link_type": "DocType",
+        "link_to": "Employee",
+        "icon": "users"
+    })
+    
+    ws.append("links", {
+        "label": "Checkin jurnali",
+        "type": "Link",
+        "link_type": "DocType",
+        "link_to": "Employee Checkin",
+        "icon": "log-in"
+    })
     
     ws.flags.ignore_permissions = True
     ws.flags.ignore_links = True
     ws.insert()
     
-    print(f"  ✓ Created: {ws_name}")
+    print(f"   ✅ Yaratildi: {ws_name}")
 
 
-def setup_managers():
-    """Manager users + HR Manager role + Company permission"""
-    print("\n👤 Setting up managers...")
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROLE VA PERMISSION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def setup_manager_role():
+    """Filial Manager rolini yaratish/sozlash"""
+    role_name = "Filial Manager"
     
-    managers = [
-        ("admin_jazira@jazira.uz", "Bosh Manager", "Jazira", True),
-        ("manager_xalq@jazira.uz", "Xalq Bank Manager", "Jazira Xalq Banki", False),
-        ("manager_saripul@jazira.uz", "Saripul Manager", "Jazira Saripul", False),
-        ("manager_smart@jazira.uz", "Smart Manager", "Jazira Smart", False),
-        ("manager_sklad@jazira.uz", "Sklad Manager", "Jazira Sklad", False),
+    print(f"\n🔐 Rol sozlanmoqda: {role_name}")
+    
+    # Rol yaratish
+    if not frappe.db.exists("Role", role_name):
+        role = frappe.new_doc("Role")
+        role.role_name = role_name
+        role.desk_access = 1
+        role.is_custom = 1
+        role.flags.ignore_permissions = True
+        role.insert()
+        print(f"   ✓ Rol yaratildi: {role_name}")
+    else:
+        print(f"   - Rol mavjud: {role_name}")
+    
+    # Permission sozlash
+    setup_doctype_permissions(role_name)
+
+
+def setup_doctype_permissions(role_name):
+    """DocType permissionlarni sozlash"""
+    
+    # Ruxsat beriladigan DocTypelar va ularning permissionlari
+    permissions = [
+        # DocType, Read, Write, Create, Delete
+        ("Employee", 1, 1, 0, 0),           # O'qish va tahrirlash
+        ("Employee Checkin", 1, 0, 0, 0),   # Faqat o'qish
+        ("Attendance", 1, 0, 0, 0),         # Faqat o'qish
+        ("Shift Type", 1, 0, 0, 0),         # Faqat o'qish
+        ("Shift Assignment", 1, 1, 1, 0),   # Shift tayinlash
     ]
     
-    password = "Jazira@2024!"
-    
-    # Kerakli rollar - HR Manager permission beradi
-    required_roles = ["HR Manager", "HR User"]
-    
-    # Bloklash kerak modullar
-    all_modules = frappe.get_all("Module Def", pluck="name")
-    allowed_modules = ["Jazira App", "HR", "Setup"]
-    
-    for email, name, company, is_admin in managers:
+    for doctype, read, write, create, delete in permissions:
+        # Mavjud permissionni o'chirish
+        frappe.db.sql("""
+            DELETE FROM `tabDocPerm` 
+            WHERE parent = %s AND role = %s
+        """, (doctype, role_name))
         
+        # Yangi permission qo'shish
+        doc = frappe.get_doc("DocType", doctype)
+        doc.append("permissions", {
+            "role": role_name,
+            "read": read,
+            "write": write,
+            "create": create,
+            "delete": delete,
+            "report": 1,
+            "export": 1,
+            "if_owner": 0
+        })
+        doc.flags.ignore_permissions = True
+        doc.save()
+    
+    print(f"   ✓ Permissionlar sozlandi")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MANAGER USERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def setup_managers():
+    """Manager userlarni yaratish va sozlash"""
+    print("\n👤 Managerlar sozlanmoqda...")
+    
+    all_modules = frappe.get_all("Module Def", pluck="name")
+    
+    for mgr in MANAGERS:
+        email = mgr["email"]
+        name = mgr["name"]
+        company = mgr["company"]
+        is_admin = mgr["is_admin"]
+        password = mgr["password"]
+        
+        print(f"\n   📧 {email}")
+        
+        # ═══════════════════════════════════════════════════════════════
         # 1. User yaratish
+        # ═══════════════════════════════════════════════════════════════
         if not frappe.db.exists("User", email):
             user = frappe.new_doc("User")
             user.email = email
@@ -151,36 +392,59 @@ def setup_managers():
             user.send_welcome_email = 0
             user.new_password = password
             user.flags.ignore_password_policy = True
-            user.insert(ignore_permissions=True)
-            print(f"  ✓ Created: {email}")
+            user.flags.ignore_permissions = True
+            user.insert()
+            print(f"      ✓ User yaratildi")
         else:
-            print(f"  - Exists: {email}")
+            print(f"      - User mavjud")
         
-        # 2. Rollarni o'rnatish
         user = frappe.get_doc("User", email)
-        existing_roles = [r.role for r in user.roles]
         
-        for role in required_roles:
-            if role not in existing_roles:
-                user.append("roles", {"role": role})
+        # ═══════════════════════════════════════════════════════════════
+        # 2. Rollar
+        # ═══════════════════════════════════════════════════════════════
+        user.set("roles", [])
         
+        if is_admin:
+            # Bosh manager - to'liq dostup
+            roles = ["System Manager", "HR Manager", "HR User", "Filial Manager"]
+        else:
+            # Filial manager - cheklangan
+            roles = ["Filial Manager", "HR User"]
+        
+        for role in roles:
+            user.append("roles", {"role": role})
+        
+        print(f"      ✓ Rollar: {', '.join(roles)}")
+        
+        # ═══════════════════════════════════════════════════════════════
         # 3. Modullarni bloklash (admin uchun emas)
+        # ═══════════════════════════════════════════════════════════════
+        user.set("block_modules", [])
+        
         if not is_admin:
-            user.set("block_modules", [])
             for module in all_modules:
-                if module not in allowed_modules:
+                if module not in ALLOWED_MODULES:
                     user.append("block_modules", {"module": module})
+            print(f"      ✓ Faqat ruxsat: {', '.join(ALLOWED_MODULES)}")
+        else:
+            print(f"      ✓ Barcha modullarga dostup")
         
         user.flags.ignore_permissions = True
         user.save()
         
-        # 4. Company permission
-        frappe.db.sql(
-            "DELETE FROM `tabUser Permission` WHERE user = %s AND allow = 'Company'",
-            email
-        )
+        # ═══════════════════════════════════════════════════════════════
+        # 4. Company permission (filial cheklovi)
+        # ═══════════════════════════════════════════════════════════════
         
-        if not is_admin:
+        # Eski permissionlarni o'chirish
+        frappe.db.sql("""
+            DELETE FROM `tabUser Permission` 
+            WHERE user = %s AND allow = 'Company'
+        """, email)
+        
+        if company and not is_admin:
+            # Faqat o'z kompaniyasini ko'radi
             perm = frappe.new_doc("User Permission")
             perm.user = email
             perm.allow = "Company"
@@ -189,43 +453,62 @@ def setup_managers():
             perm.apply_to_all_doctypes = 1
             perm.flags.ignore_permissions = True
             perm.insert()
-            print(f"  🔒 {email} → {company}")
+            print(f"      🔒 Faqat: {company}")
         else:
-            print(f"  🔓 {email} → full access")
+            print(f"      🔓 Barcha kompaniyalar")
+    
+    frappe.db.commit()
 
 
-def hide_hr_workspaces():
+# ═══════════════════════════════════════════════════════════════════════════════
+# WORKSPACE HIDING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def hide_unnecessary_workspaces():
     """Ortiqcha workspacelarni yashirish"""
-    print("\n🙈 Hiding unnecessary workspaces...")
+    print("\n🙈 Ortiqcha workspacelar yashirilmoqda...")
     
-    hr_workspaces = [
-        # HR modules
-        "HR",
-        "Recruitment",
-        "Employee Lifecycle", 
-        "Performance",
-        "Shift & Attendance",
-        "Expense Claims",
-        "Leaves",
-        "Payroll",
-        # System
-        "Home",
-        "ERPNext Settings",
-        "Settings",
-        "Build",
-        "Customization",
-        "Integrations",
-        "Tools",
-        "Users",
-    ]
+    hidden_count = 0
     
-    for ws_name in hr_workspaces:
+    for ws_name in WORKSPACES_TO_HIDE:
         if frappe.db.exists("Workspace", ws_name):
             try:
                 ws = frappe.get_doc("Workspace", ws_name)
-                ws.public = 0
-                ws.flags.ignore_permissions = True
-                ws.save()
-                print(f"  ✓ Hidden: {ws_name}")
+                if ws.public:
+                    ws.public = 0
+                    ws.flags.ignore_permissions = True
+                    ws.save()
+                    hidden_count += 1
             except Exception as e:
-                print(f"  ⚠ {ws_name}: {e}")
+                print(f"      ⚠️ {ws_name}: {e}")
+    
+    print(f"   ✓ {hidden_count} ta workspace yashirildi")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UTILITY FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def reset_manager_password(email, new_password):
+    """Manager parolini o'zgartirish"""
+    if frappe.db.exists("User", email):
+        user = frappe.get_doc("User", email)
+        user.new_password = new_password
+        user.flags.ignore_password_policy = True
+        user.flags.ignore_permissions = True
+        user.save()
+        frappe.db.commit()
+        return True
+    return False
+
+
+def add_manager(email, name, company, password="Jazira@2024!"):
+    """Yangi manager qo'shish"""
+    MANAGERS.append({
+        "email": email,
+        "name": name,
+        "company": company,
+        "is_admin": False,
+        "password": password
+    })
+    setup_managers()
