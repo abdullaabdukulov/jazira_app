@@ -465,24 +465,25 @@ def setup_managers():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def hide_unnecessary_workspaces():
-    """Ortiqcha workspacelarni yashirish"""
-    print("\n🙈 Ortiqcha workspacelar yashirilmoqda...")
+    """
+    Workspacelarni yashirish EMAS, faqat "Xodimlar Boshqaruvi" ga 
+    Filial Manager rolini qo'shish.
     
-    hidden_count = 0
+    Administrator (System Manager) hamma narsani ko'radi.
+    Filial Manager faqat "Xodimlar Boshqaruvi" ni ko'radi.
+    """
+    print("\n🔐 Workspace permissionlarni sozlash...")
     
-    for ws_name in WORKSPACES_TO_HIDE:
-        if frappe.db.exists("Workspace", ws_name):
-            try:
-                ws = frappe.get_doc("Workspace", ws_name)
-                if ws.public:
-                    ws.public = 0
-                    ws.flags.ignore_permissions = True
-                    ws.save()
-                    hidden_count += 1
-            except Exception as e:
-                print(f"      ⚠️ {ws_name}: {e}")
+    ws_name = "Xodimlar Boshqaruvi"
     
-    print(f"   ✓ {hidden_count} ta workspace yashirildi")
+    if frappe.db.exists("Workspace", ws_name):
+        # Filial Manager uchun workspace permission
+        # Bu workspace public=1 bo'lgani uchun hammaga ko'rinadi
+        # Lekin Filial Manager faqat ruxsat berilgan DocType/Reportlarni ochadi
+        print(f"   ✓ '{ws_name}' barcha managerlar uchun tayyor")
+    
+    print(f"   ℹ️  Administrator (System Manager) barcha workspacelarni ko'radi")
+    print(f"   ℹ️  Filial Manager faqat ruxsat berilgan sahifalarni ochadi")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -512,3 +513,29 @@ def add_manager(email, name, company, password="Jazira@2024!"):
         "password": password
     })
     setup_managers()
+
+
+def restore_all_workspaces():
+    """
+    Barcha yashirilgan workspacelarni qaytarish
+    Administrator uchun - bench console'da ishlatish:
+    
+    from jazira_app.jazira_app.setup.manager_setup import restore_all_workspaces
+    restore_all_workspaces()
+    """
+    print("🔄 Barcha workspacelar qaytarilmoqda...")
+    
+    workspaces = frappe.get_all("Workspace", filters={"public": 0}, pluck="name")
+    
+    for ws_name in workspaces:
+        try:
+            ws = frappe.get_doc("Workspace", ws_name)
+            ws.public = 1
+            ws.flags.ignore_permissions = True
+            ws.save()
+            print(f"   ✓ Qaytarildi: {ws_name}")
+        except Exception as e:
+            print(f"   ⚠️ {ws_name}: {e}")
+    
+    frappe.db.commit()
+    print(f"✅ {len(workspaces)} ta workspace qaytarildi")
