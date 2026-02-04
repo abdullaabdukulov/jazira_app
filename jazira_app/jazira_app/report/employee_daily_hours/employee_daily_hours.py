@@ -1,12 +1,16 @@
 # Copyright (c) 2026, Jazira App
 # License: MIT
 """
-Employee Daily Hours Report
+Employee Daily Hours Report with Earnings
+
+Calculates:
+- Worked hours (First IN to Last OUT)
+- Daily earnings = Worked Hours × Hourly Rate
 """
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, add_days
+from frappe.utils import getdate, add_days, flt
 from datetime import datetime, timedelta, time as dt_time
 
 
@@ -27,15 +31,17 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        {"label": _("Employee"), "fieldname": "employee", "fieldtype": "Link", "options": "Employee", "width": 140},
-        {"label": _("Employee Name"), "fieldname": "employee_name", "fieldtype": "Data", "width": 150},
+        {"label": _("Employee"), "fieldname": "employee", "fieldtype": "Link", "options": "Employee", "width": 120},
+        {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 180},
         {"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 100},
-        {"label": _("First IN"), "fieldname": "first_in", "fieldtype": "Data", "width": 80},
-        {"label": _("Last OUT"), "fieldname": "last_out", "fieldtype": "Data", "width": 100},
-        {"label": _("Gross Time"), "fieldname": "gross_time", "fieldtype": "Data", "width": 100},
-        {"label": _("Breaks"), "fieldname": "breaks", "fieldtype": "Data", "width": 80},
-        {"label": _("Worked (HH:MM)"), "fieldname": "worked", "fieldtype": "Data", "width": 110},
-        {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 180},
+        {"label": _("First IN"), "fieldname": "first_in", "fieldtype": "Data", "width": 75},
+        {"label": _("Last OUT"), "fieldname": "last_out", "fieldtype": "Data", "width": 90},
+        {"label": _("Gross"), "fieldname": "gross_time", "fieldtype": "Data", "width": 70},
+        {"label": _("Breaks"), "fieldname": "breaks", "fieldtype": "Data", "width": 70},
+        {"label": _("Worked"), "fieldname": "worked", "fieldtype": "Data", "width": 70},
+        {"label": _("Rate/Hour"), "fieldname": "hourly_rate", "fieldtype": "Currency", "width": 110},
+        {"label": _("Earnings"), "fieldname": "earnings", "fieldtype": "Currency", "width": 120},
+        {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 150},
     ]
 
 
@@ -43,7 +49,16 @@ def get_data(filters):
     employee = filters.get("employee")
     selected_date = getdate(filters.get("date"))
     
-    employee_name = frappe.db.get_value("Employee", employee, "employee_name") or ""
+    # Get employee info
+    emp_data = frappe.db.get_value(
+        "Employee", 
+        employee, 
+        ["employee_name", "hourly_rate", "salary_currency"],
+        as_dict=True
+    ) or {}
+    
+    employee_name = emp_data.get("employee_name") or ""
+    hourly_rate = flt(emp_data.get("hourly_rate") or 0)
     
     # Time boundaries
     day_start = datetime.combine(selected_date, dt_time.min)
@@ -73,6 +88,8 @@ def get_data(filters):
             "gross_time": "-",
             "breaks": "-",
             "worked": "00:00",
+            "hourly_rate": hourly_rate,
+            "earnings": 0,
             "status": "No logs"
         }]
     
@@ -107,6 +124,10 @@ def get_data(filters):
         else:
             last_out_str = lo.strftime("%H:%M")
     
+    # Calculate earnings
+    worked_hours = result["worked_minutes"] / 60.0
+    earnings = worked_hours * hourly_rate
+    
     # Summary row
     data = [{
         "employee": employee,
@@ -117,6 +138,8 @@ def get_data(filters):
         "gross_time": fmt_hhmm(result["gross_minutes"]) if result["gross_minutes"] > 0 else "-",
         "breaks": fmt_hhmm(result["break_minutes"]) if result["break_minutes"] > 0 else "-",
         "worked": fmt_hhmm(result["worked_minutes"]),
+        "hourly_rate": hourly_rate,
+        "earnings": earnings,
         "status": result["status"]
     }]
     
@@ -229,7 +252,7 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
         }
     
     # Case 2: Real INs exist
-    first_in = min(today_ins, key=lambda x: x.time).time  # This is datetime
+    first_in = min(today_ins, key=lambda x: x.time).time
     
     available_outs = sorted(today_outs + next_day_early_outs, key=lambda x: x.time)
     
@@ -246,7 +269,7 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
             
             if minutes > 0:
                 worked_minutes += minutes
-                last_out = log.time  # This is datetime
+                last_out = log.time
                 used_outs.add(log.name)
             
             current_in = None
@@ -256,24 +279,22 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
     
     # Calculate Gross Time
     if first_in and last_out:
-        # first_in is datetime from log.time
-        # last_out is datetime from log.time
         if isinstance(first_in, datetime) and isinstance(last_out, datetime):
             gross_minutes = int((last_out - first_in).total_seconds() / 60)
-        elif isinstance(first_in, datetime):
-            # last_out is time
-            first_in_dt = first_in
-            last_out_dt = datetime.combine(selected_date, last_out)
-            if last_out_dt < first_in_dt:
-                last_out_dt = datetime.combine(add_days(selected_date, 1), last_out)
-            gross_minutes = int((last_out_dt - first_in_dt).total_seconds() / 60)
         else:
-            # Both are time objects
-            first_in_dt = datetime.combine(selected_date, first_in)
-            last_out_dt = datetime.combine(selected_date, last_out)
-            if last_out_dt < first_in_dt:
-                last_out_dt = datetime.combine(add_days(selected_date, 1), last_out)
-            gross_minutes = int((last_out_dt - first_in_dt).total_seconds() / 60)
+            if isinstance(first_in, datetime):
+                fi_dt = first_in
+            else:
+                fi_dt = datetime.combine(selected_date, first_in)
+            
+            if isinstance(last_out, datetime):
+                lo_dt = last_out
+            else:
+                lo_dt = datetime.combine(selected_date, last_out)
+                if lo_dt < fi_dt:
+                    lo_dt = datetime.combine(next_day, last_out)
+            
+            gross_minutes = int((lo_dt - fi_dt).total_seconds() / 60)
     
     # Calculate Breaks
     break_minutes = calculate_breaks(temp_out_logs, return_logs)

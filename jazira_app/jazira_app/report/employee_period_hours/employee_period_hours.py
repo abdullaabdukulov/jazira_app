@@ -1,12 +1,14 @@
 # Copyright (c) 2026, Jazira App
 # License: MIT
 """
-Employee Period Hours Report - date range
+Employee Period Hours Report with Earnings
+
+Shows worked hours and earnings for date range
 """
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, add_days, date_diff
+from frappe.utils import getdate, add_days, date_diff, flt
 from datetime import datetime, timedelta, time as dt_time
 
 
@@ -22,21 +24,22 @@ def execute(filters=None):
         frappe.throw(_("Please select To Date"))
     
     columns = get_columns()
-    data = get_data(filters)
+    data, report_summary = get_data(filters)
     
-    return columns, data
+    return columns, data, None, None, report_summary
 
 
 def get_columns():
     return [
         {"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 100},
-        {"label": _("Day"), "fieldname": "day", "fieldtype": "Data", "width": 80},
-        {"label": _("First IN"), "fieldname": "first_in", "fieldtype": "Data", "width": 80},
-        {"label": _("Last OUT"), "fieldname": "last_out", "fieldtype": "Data", "width": 100},
-        {"label": _("Gross Time"), "fieldname": "gross_time", "fieldtype": "Data", "width": 100},
-        {"label": _("Breaks"), "fieldname": "breaks", "fieldtype": "Data", "width": 80},
-        {"label": _("Worked"), "fieldname": "worked", "fieldtype": "Data", "width": 100},
-        {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 150},
+        {"label": _("Day"), "fieldname": "day", "fieldtype": "Data", "width": 70},
+        {"label": _("First IN"), "fieldname": "first_in", "fieldtype": "Data", "width": 75},
+        {"label": _("Last OUT"), "fieldname": "last_out", "fieldtype": "Data", "width": 90},
+        {"label": _("Gross"), "fieldname": "gross_time", "fieldtype": "Data", "width": 65},
+        {"label": _("Breaks"), "fieldname": "breaks", "fieldtype": "Data", "width": 65},
+        {"label": _("Worked"), "fieldname": "worked", "fieldtype": "Data", "width": 70},
+        {"label": _("Earnings"), "fieldname": "earnings", "fieldtype": "Currency", "width": 120},
+        {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 130},
     ]
 
 
@@ -50,6 +53,17 @@ def get_data(filters):
     
     if date_diff(to_date, from_date) > 31:
         frappe.throw(_("Date range cannot exceed 31 days"))
+    
+    # Get employee info
+    emp_data = frappe.db.get_value(
+        "Employee", 
+        employee, 
+        ["employee_name", "hourly_rate"],
+        as_dict=True
+    ) or {}
+    
+    employee_name = emp_data.get("employee_name") or ""
+    hourly_rate = flt(emp_data.get("hourly_rate") or 0)
     
     # Fetch all logs
     search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
@@ -66,10 +80,25 @@ def get_data(filters):
         0: "Dush", 1: "Sesh", 2: "Chor", 3: "Pay", 4: "Jum", 5: "Shan", 6: "Yak"
     }
     
-    data = []
+    # Header row with employee name
+    data = [{
+        "date": f"👤 {employee_name}",
+        "day": "",
+        "first_in": "",
+        "last_out": "",
+        "gross_time": "",
+        "breaks": "",
+        "worked": "",
+        "earnings": "",
+        "status": f"Rate: {frappe.format_value(hourly_rate, {'fieldtype': 'Currency'})}/soat"
+    }]
+    
+    data.append({})  # Empty row
+    
     total_worked = 0
     total_breaks = 0
     total_gross = 0
+    total_earnings = 0
     days_worked = 0
     
     current_date = from_date
@@ -104,6 +133,10 @@ def get_data(filters):
             else:
                 last_out_str = lo.strftime("%H:%M")
         
+        # Calculate daily earnings
+        worked_hours = day_result["worked_minutes"] / 60.0
+        daily_earnings = worked_hours * hourly_rate
+        
         row = {
             "date": current_date,
             "day": day_names.get(current_date.weekday(), ""),
@@ -112,6 +145,7 @@ def get_data(filters):
             "gross_time": fmt_hhmm(day_result["gross_minutes"]),
             "breaks": fmt_hhmm(day_result["break_minutes"]),
             "worked": fmt_hhmm(day_result["worked_minutes"]),
+            "earnings": daily_earnings if daily_earnings > 0 else None,
             "status": day_result["status"]
         }
         
@@ -121,14 +155,15 @@ def get_data(filters):
             total_worked += day_result["worked_minutes"]
             total_gross += day_result["gross_minutes"]
             total_breaks += day_result["break_minutes"]
+            total_earnings += daily_earnings
             days_worked += 1
         
         current_date = add_days(current_date, 1)
     
-    # Empty row
+    # Empty row before totals
     data.append({})
     
-    # Totals
+    # Totals row
     def fmt_total(minutes):
         if minutes <= 0:
             return "00:00"
@@ -142,9 +177,19 @@ def get_data(filters):
         "gross_time": fmt_total(total_gross),
         "breaks": fmt_total(total_breaks),
         "worked": fmt_total(total_worked),
+        "earnings": total_earnings,
     })
     
-    return data
+    # Report summary (shows at top)
+    report_summary = [
+        {"label": _("Employee"), "value": employee_name, "datatype": "Data"},
+        {"label": _("Period"), "value": f"{from_date.strftime('%d-%m')} — {to_date.strftime('%d-%m-%Y')}", "datatype": "Data"},
+        {"label": _("Days Worked"), "value": days_worked, "datatype": "Int"},
+        {"label": _("Total Hours"), "value": fmt_total(total_worked), "datatype": "Data"},
+        {"label": _("Total Earnings"), "value": total_earnings, "datatype": "Currency"},
+    ]
+    
+    return data, report_summary
 
 
 def calculate_day(all_logs, selected_date):
@@ -208,7 +253,7 @@ def calculate_day(all_logs, selected_date):
         }
     
     # Case 2: INs exist
-    first_in = min(today_ins, key=lambda x: x.time).time  # datetime
+    first_in = min(today_ins, key=lambda x: x.time).time
     
     available_outs = sorted(today_outs + next_day_early_outs, key=lambda x: x.time)
     
@@ -225,7 +270,7 @@ def calculate_day(all_logs, selected_date):
             
             if minutes > 0:
                 worked_minutes += minutes
-                last_out = log.time  # datetime
+                last_out = log.time
                 used_outs.add(log.name)
             
             current_in = None
@@ -238,7 +283,6 @@ def calculate_day(all_logs, selected_date):
         if isinstance(first_in, datetime) and isinstance(last_out, datetime):
             gross_minutes = int((last_out - first_in).total_seconds() / 60)
         else:
-            # Convert to datetime if needed
             if isinstance(first_in, datetime):
                 fi_dt = first_in
             else:
