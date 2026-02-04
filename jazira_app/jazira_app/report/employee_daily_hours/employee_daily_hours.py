@@ -32,37 +32,37 @@ def execute(filters=None):
 
 
 def get_columns():
-    """Sodda ustunlar"""
+    """Keng ustunlar - biznes uchun qulay"""
     return [
         {
             "label": _("#"),
             "fieldname": "row_num",
             "fieldtype": "Data",
-            "width": 50
+            "width": 60
         },
         {
-            "label": _("Vaqt"),
+            "label": _("Vaqt / Sarlavha"),
             "fieldname": "time",
             "fieldtype": "Data",
-            "width": 90
+            "width": 150
         },
         {
-            "label": _("Turi"),
+            "label": _("Qiymat / Turi"),
             "fieldname": "log_type",
             "fieldtype": "Data",
-            "width": 120
+            "width": 200
         },
         {
-            "label": _("Izoh"),
+            "label": _("Izoh / Qo'shimcha"),
             "fieldname": "description",
             "fieldtype": "Data",
-            "width": 250
+            "width": 280
         },
         {
             "label": _("Davomiylik"),
             "fieldname": "duration",
             "fieldtype": "Data",
-            "width": 100
+            "width": 120
         }
     ]
 
@@ -151,26 +151,26 @@ def get_data(filters):
     
     data.append({
         "row_num": "",
-        "time": "🟢 Keldi:",
+        "time": "🟢 Keldi",
         "log_type": first_in_str,
-        "description": "🔴 Ketdi:",
-        "duration": last_out_str
+        "description": f"🔴 Ketdi: {last_out_str}",
+        "duration": ""
     })
     
     data.append({
         "row_num": "",
-        "time": "⏱️ Ish vaqti:",
+        "time": "⏱️ Ish vaqti",
         "log_type": worked_str,
-        "description": "☕ Tanaffus:",
-        "duration": break_str
+        "description": f"☕ Tanaffus: {break_str}",
+        "duration": ""
     })
     
     if hourly_rate > 0:
         data.append({
             "row_num": "",
-            "time": "💰 Daromad:",
+            "time": "💰 Daromad",
             "log_type": f"{earnings:,.0f} UZS",
-            "description": f"(Soatlik: {hourly_rate:,.0f} UZS)",
+            "description": f"Stavka: {hourly_rate:,.0f} UZS/soat",
             "duration": ""
         })
     
@@ -179,7 +179,7 @@ def get_data(filters):
     status_text = get_status_text(result["status"])
     data.append({
         "row_num": "",
-        "time": f"{status_icon} Status:",
+        "time": f"{status_icon} Holat",
         "log_type": status_text,
         "description": "",
         "duration": ""
