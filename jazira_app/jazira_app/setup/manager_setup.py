@@ -31,7 +31,7 @@ MANAGERS = [
     {
         "email": "manager_xalqbank@jazira.uz",
         "name": "Xalq Bank Manager",
-        "company": "Jazira Xalq Bank",
+        "company": "Jazira Xalq Banki",
         "is_admin": False,
         "password": "Jazira@2024!"
     },
