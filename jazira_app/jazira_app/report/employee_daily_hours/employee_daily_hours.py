@@ -2,9 +2,6 @@
 # License: MIT
 """
 Employee Daily Hours Report
-
-Shows summary + all logs (IN, OUT, TEMP_OUT, RETURN)
-Calculates Gross Time, Breaks, and Worked time
 """
 
 import frappe
@@ -58,7 +55,7 @@ def get_data(filters):
     search_start = datetime.combine(prev_day, dt_time(12, 0, 0))
     search_end = datetime.combine(next_day, dt_time(12, 0, 0))
     
-    # Fetch logs with checkin_reason
+    # Fetch logs
     logs = frappe.db.sql("""
         SELECT name, employee, time, log_type, checkin_reason
         FROM `tabEmployee Checkin`
@@ -89,20 +86,33 @@ def get_data(filters):
         m = minutes % 60
         return f"{h:02d}:{m:02d}"
     
+    # Format first_in
+    first_in_str = "-"
+    if result["first_in"]:
+        fi = result["first_in"]
+        if isinstance(fi, datetime):
+            first_in_str = fi.strftime("%H:%M")
+        else:
+            first_in_str = fi.strftime("%H:%M")
+    
+    # Format last_out
     last_out_str = "-"
     if result["last_out"]:
-        out_time = result["last_out"]
-        if out_time.date() != selected_date:
-            last_out_str = out_time.strftime("%d-%m %H:%M")
+        lo = result["last_out"]
+        if isinstance(lo, datetime):
+            if lo.date() != selected_date:
+                last_out_str = lo.strftime("%d-%m %H:%M")
+            else:
+                last_out_str = lo.strftime("%H:%M")
         else:
-            last_out_str = out_time.strftime("%H:%M")
+            last_out_str = lo.strftime("%H:%M")
     
     # Summary row
     data = [{
         "employee": employee,
         "employee_name": employee_name,
         "date": selected_date,
-        "first_in": result["first_in"].strftime("%H:%M") if result["first_in"] else "-",
+        "first_in": first_in_str,
         "last_out": last_out_str,
         "gross_time": fmt_hhmm(result["gross_minutes"]) if result["gross_minutes"] > 0 else "-",
         "breaks": fmt_hhmm(result["break_minutes"]) if result["break_minutes"] > 0 else "-",
@@ -110,7 +120,7 @@ def get_data(filters):
         "status": result["status"]
     }]
     
-    # Empty row separator
+    # Empty row
     data.append({})
     
     # Logs header
@@ -123,13 +133,16 @@ def get_data(filters):
     
     # All logs
     for i, log in enumerate(result["session_logs"], 1):
-        log_date = log.time.date()
-        if log_date != selected_date:
-            time_str = log.time.strftime("%d-%m %H:%M:%S")
+        log_time = log.time
+        if isinstance(log_time, datetime):
+            if log_time.date() != selected_date:
+                time_str = log_time.strftime("%d-%m %H:%M:%S")
+            else:
+                time_str = log_time.strftime("%H:%M:%S")
         else:
-            time_str = log.time.strftime("%H:%M:%S")
+            time_str = str(log_time)
         
-        # Determine display type
+        # Display type
         if log.checkin_reason in ["TEMP_OUT", "RETURN"]:
             log_type_display = log.checkin_reason
         else:
@@ -159,37 +172,37 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
     
     # Previous day INs (after 12:00)
     prev_day_ins = [l for l in logs if l.log_type == "IN" 
-                   and l.time.date() == prev_day and l.time.hour >= 12]
+                   and l.time.date() == prev_day and l.time.hour >= 12
+                   and l.checkin_reason != "RETURN"]
     
-    # Today's logs - only real IN (not RETURN)
+    # Today's real INs
     today_ins = [l for l in logs if l.log_type == "IN" 
                 and l.time.date() == selected_date
                 and l.checkin_reason != "RETURN"]
     
-    # Today's OUTs - only real OUT (not TEMP_OUT)
+    # Today's real OUTs
     today_outs = [l for l in logs if l.log_type == "OUT" 
                  and l.time.date() == selected_date
                  and l.checkin_reason != "TEMP_OUT"]
     
-    # All logs on selected date (for display)
+    # All logs on selected date
     today_all_logs = [l for l in logs if l.time.date() == selected_date]
     
-    # TEMP_OUT and RETURN for break calculation
+    # TEMP_OUT and RETURN
     temp_out_logs = [l for l in logs if l.checkin_reason == "TEMP_OUT" 
                     and l.time.date() == selected_date]
     return_logs = [l for l in logs if l.checkin_reason == "RETURN" 
                   and l.time.date() == selected_date]
     
-    # Next day early OUTs (real OUT only)
+    # Next day early OUTs
     next_day_early_outs = [l for l in logs if l.log_type == "OUT" 
                           and l.time.date() == next_day 
                           and l.time.hour < 12
                           and l.checkin_reason != "TEMP_OUT"]
     
-    # Next day early logs (for display)
     next_day_early_logs = [l for l in logs if l.time.date() == next_day and l.time.hour < 12]
     
-    # Case 1: No real IN on selected date
+    # Case 1: No real IN
     if not today_ins:
         if today_all_logs:
             if today_outs:
@@ -215,16 +228,14 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
             "session_logs": session_logs
         }
     
-    # Case 2: Real INs exist on selected date
-    first_in = min(today_ins, key=lambda x: x.time).time
+    # Case 2: Real INs exist
+    first_in = min(today_ins, key=lambda x: x.time).time  # This is datetime
     
-    # All available real OUTs for pairing
     available_outs = sorted(today_outs + next_day_early_outs, key=lambda x: x.time)
     
     current_in = None
     used_outs = set()
     
-    # Process only real IN/OUT for work calculation
     for log in sorted(today_ins + available_outs, key=lambda x: x.time):
         if log.log_type == "IN" and log.time.date() == selected_date and log.checkin_reason != "RETURN":
             current_in = log
@@ -235,7 +246,7 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
             
             if minutes > 0:
                 worked_minutes += minutes
-                last_out = log.time
+                last_out = log.time  # This is datetime
                 used_outs.add(log.name)
             
             current_in = None
@@ -243,26 +254,31 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
     if current_in:
         status = "Missing OUT"
     
-    # Calculate Gross Time (first IN to last OUT)
+    # Calculate Gross Time
     if first_in and last_out:
-        first_in_dt = datetime.combine(selected_date, first_in)
-        if last_out.date() != selected_date:
-            last_out_dt = datetime.combine(last_out.date(), last_out.time())
+        # first_in is datetime from log.time
+        # last_out is datetime from log.time
+        if isinstance(first_in, datetime) and isinstance(last_out, datetime):
+            gross_minutes = int((last_out - first_in).total_seconds() / 60)
+        elif isinstance(first_in, datetime):
+            # last_out is time
+            first_in_dt = first_in
+            last_out_dt = datetime.combine(selected_date, last_out)
+            if last_out_dt < first_in_dt:
+                last_out_dt = datetime.combine(add_days(selected_date, 1), last_out)
+            gross_minutes = int((last_out_dt - first_in_dt).total_seconds() / 60)
         else:
-            last_out_dt = datetime.combine(selected_date, last_out.time())
-        
-        if isinstance(last_out, datetime):
-            gross_minutes = int((last_out - first_in_dt).total_seconds() / 60)
-        else:
+            # Both are time objects
+            first_in_dt = datetime.combine(selected_date, first_in)
+            last_out_dt = datetime.combine(selected_date, last_out)
+            if last_out_dt < first_in_dt:
+                last_out_dt = datetime.combine(add_days(selected_date, 1), last_out)
             gross_minutes = int((last_out_dt - first_in_dt).total_seconds() / 60)
     
-    # Calculate Breaks (TEMP_OUT → RETURN pairs)
+    # Calculate Breaks
     break_minutes = calculate_breaks(temp_out_logs, return_logs)
     
-    # Worked = Gross - Breaks (alternative calculation if needed)
-    # But we already calculated worked_minutes from IN/OUT pairs
-    
-    # Session logs = today's logs + next day early logs (for display)
+    # Session logs
     session_logs = sorted(today_all_logs + next_day_early_logs, key=lambda x: x.time)
     
     return {
@@ -277,22 +293,20 @@ def calculate_work_for_date(logs, selected_date, day_start, day_end):
 
 
 def calculate_breaks(temp_out_logs, return_logs):
-    """Calculate total break time from TEMP_OUT → RETURN pairs."""
     if not temp_out_logs or not return_logs:
         return 0
     
-    total_break_minutes = 0
+    total = 0
     temp_outs = sorted(temp_out_logs, key=lambda x: x.time)
     returns = sorted(return_logs, key=lambda x: x.time)
+    used = set()
     
-    used_returns = set()
-    
-    for temp_out in temp_outs:
+    for to in temp_outs:
         for ret in returns:
-            if ret.name not in used_returns and ret.time > temp_out.time:
-                break_delta = ret.time - temp_out.time
-                total_break_minutes += int(break_delta.total_seconds() / 60)
-                used_returns.add(ret.name)
+            if ret.name not in used and ret.time > to.time:
+                delta = ret.time - to.time
+                total += int(delta.total_seconds() / 60)
+                used.add(ret.name)
                 break
     
-    return total_break_minutes
+    return total
