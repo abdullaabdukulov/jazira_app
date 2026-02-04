@@ -1,82 +1,111 @@
 // Copyright (c) 2026, Jazira App
 // License: MIT
+// Kunlik Ish Vaqti Hisoboti
 
 frappe.query_reports["Employee Daily Hours"] = {
-    "filters": [
+    filters: [
         {
-            "fieldname": "employee",
-            "label": __("Employee"),
-            "fieldtype": "Link",
-            "options": "Employee",
-            "reqd": 1,
-            "get_query": function() {
-                return { filters: { "status": "Active" } };
+            fieldname: "employee",
+            label: __("Xodim"),
+            fieldtype: "Link",
+            options: "Employee",
+            reqd: 1,
+            get_query: function() {
+                return { filters: { status: "Active" } };
             }
         },
         {
-            "fieldname": "date",
-            "label": __("Date"),
-            "fieldtype": "Date",
-            "reqd": 1,
-            "default": frappe.datetime.get_today()
-        },
-        {
-            "fieldname": "show_raw_logs",
-            "label": __("Show Raw Logs"),
-            "fieldtype": "Check",
-            "default": 0
+            fieldname: "date",
+            label: __("Sana"),
+            fieldtype: "Date",
+            reqd: 1,
+            default: frappe.datetime.get_today()
         }
     ],
 
-    "formatter": function(value, row, column, data, default_formatter) {
+    formatter: function(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
-
-        // Status coloring
-        if (column.fieldname === "status" && data && data.status) {
-            if (data.status === "OK") {
-                value = `<span style="color:green;font-weight:bold;">${value}</span>`;
-            } else if (data.status.includes("Missing") || data.status === "Invalid order") {
-                value = `<span style="color:red;font-weight:bold;">${value}</span>`;
-            } else {
-                value = `<span style="color:gray;">${value}</span>`;
+        
+        if (!data) return value;
+        
+        // Sarlavha qatorlari
+        if (data.row_num === "👤" || data.row_num === "📊" || data.row_num === "📋") {
+            return `<strong style="font-size: 14px;">${value}</strong>`;
+        }
+        
+        // Ustun sarlavhasi
+        if (data.row_num === "#" && column.fieldname === "row_num") {
+            return `<strong style="background: #f5f5f5; padding: 4px 8px;">${value}</strong>`;
+        }
+        
+        // Status ranglari
+        if (column.fieldname === "log_type") {
+            if (data.log_type && data.log_type.includes("Normada")) {
+                return `<span style="color: green; font-weight: bold;">${value}</span>`;
+            }
+            if (data.log_type && (data.log_type.includes("qayd etilmagan") || data.log_type.includes("yo'q"))) {
+                return `<span style="color: red; font-weight: bold;">${value}</span>`;
+            }
+            // Ish vaqti (8+ soat yashil)
+            if (data.time && data.time.includes("Ish vaqti")) {
+                const match = value.match(/(\d+):(\d+)/);
+                if (match) {
+                    const hours = parseInt(match[1]);
+                    if (hours >= 8) {
+                        return `<span style="color: green; font-weight: bold;">${value}</span>`;
+                    } else if (hours >= 4) {
+                        return `<span style="color: orange; font-weight: bold;">${value}</span>`;
+                    } else if (hours > 0) {
+                        return `<span style="color: red;">${value}</span>`;
+                    }
+                }
+            }
+            // Daromad
+            if (data.time && data.time.includes("Daromad")) {
+                return `<span style="color: green; font-weight: bold; font-size: 13px;">${value}</span>`;
             }
         }
-
-        // Worked time coloring (green if >= 8 hours)
-        if (column.fieldname === "worked" && data && data.worked && data.worked !== "-") {
-            const parts = data.worked.split(":");
-            const hours = parseInt(parts[0]) || 0;
-            if (hours >= 8) {
-                value = `<span style="color:green;font-weight:bold;">${value}</span>`;
-            } else if (hours > 0) {
-                value = `<span style="color:blue;">${value}</span>`;
+        
+        // Log turlari uchun rang
+        if (column.fieldname === "log_type" && data.row_num && !isNaN(data.row_num)) {
+            if (value.includes("KELDI")) {
+                return `<span style="color: #28a745;">${value}</span>`;
+            }
+            if (value.includes("KETDI") && !value.includes("tanaffus")) {
+                return `<span style="color: #dc3545;">${value}</span>`;
+            }
+            if (value.includes("CHIQDI") && value.includes("tanaffus")) {
+                return `<span style="color: #fd7e14;">${value}</span>`;
+            }
+            if (value.includes("QAYTDI")) {
+                return `<span style="color: #6f42c1;">${value}</span>`;
             }
         }
-
-        // Breaks coloring (orange if breaks exist)
-        if (column.fieldname === "breaks" && data && data.breaks && data.breaks !== "-") {
-            value = `<span style="color:orange;">${value}</span>`;
+        
+        // Vaqt ustuni
+        if (column.fieldname === "time" && data.row_num && !isNaN(data.row_num)) {
+            return `<span style="font-family: monospace; font-size: 13px;">${value}</span>`;
         }
-
-        // Raw logs section header
-        if (data && data.employee === "--- Raw Logs ---") {
-            value = `<strong style="color:#333;">${value}</strong>`;
+        
+        // Davomiylik
+        if (column.fieldname === "duration" && value && value !== "—") {
+            return `<span style="color: #6c757d; font-style: italic;">${value}</span>`;
         }
-
-        // Highlight break logs
-        if (column.fieldname === "is_break" && data && data.is_break === "Yes") {
-            value = `<span style="color:orange;font-weight:bold;">${value}</span>`;
-        }
-
-        // Color checkin_reason
-        if (column.fieldname === "checkin_reason" && data && data.checkin_reason) {
-            if (data.checkin_reason === "TEMP_OUT") {
-                value = `<span style="color:orange;">${value}</span>`;
-            } else if (data.checkin_reason === "RETURN") {
-                value = `<span style="color:purple;">${value}</span>`;
-            }
-        }
-
+        
         return value;
+    },
+
+    onload: function(report) {
+        // Avtomatik yuklash
+        report.page.add_inner_button(__("Bugun"), function() {
+            frappe.query_report.set_filter_value("date", frappe.datetime.get_today());
+            frappe.query_report.refresh();
+        });
+        
+        report.page.add_inner_button(__("Kecha"), function() {
+            const yesterday = frappe.datetime.add_days(frappe.datetime.get_today(), -1);
+            frappe.query_report.set_filter_value("date", yesterday);
+            frappe.query_report.refresh();
+        });
     }
 };
