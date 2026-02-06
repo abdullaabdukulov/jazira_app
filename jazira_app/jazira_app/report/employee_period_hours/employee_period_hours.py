@@ -110,11 +110,8 @@ def get_data(filters):
     hourly_rate = flt(emp.get("hourly_rate") or 0)
     company = emp.get("company") or ""
     
-    # Xodim ismi + lavozimi
-    if designation:
-        employee_display = f"{employee_name} ({designation})"
-    else:
-        employee_display = employee_name
+    # Xodim ismi (designation alohida ko'rsatiladi)
+    employee_display = employee_name
     
     # Loglarni olish
     search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
@@ -243,17 +240,22 @@ def get_data(filters):
         "is_total": True
     })
     
-    # Report summary (yuqorida ko'rinadi) - DESIGNATION qo'shildi
+    # Report summary (yuqorida ko'rinadi) - Designation alohida qator
     report_summary = [
         {
             "label": _("Xodim"),
-            "value": employee_display,  # Ism + Lavozim
+            "value": employee_display,
             "datatype": "Data",
             "indicator": "blue"
         },
         {
+            "label": _("Lavozim"),
+            "value": designation or "—",
+            "datatype": "Data"
+        },
+        {
             "label": _("Filial"),
-            "value": company,
+            "value": company or "—",
             "datatype": "Data"
         },
         {
