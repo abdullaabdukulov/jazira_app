@@ -8,7 +8,6 @@ Sodda va tushunarli format:
 - Ish vaqti (soat:minut)
 - Tanaffus vaqti
 - Kunlik daromad
-- Lavozim ko'rsatiladi
 """
 
 import frappe
@@ -72,7 +71,7 @@ def get_data(filters):
     employee = filters.get("employee")
     selected_date = getdate(filters.get("date"))
     
-    # Xodim ma'lumotlari (designation qo'shildi)
+    # Xodim ma'lumotlari (designation va company qo'shildi)
     emp = frappe.db.get_value(
         "Employee",
         employee,
@@ -91,25 +90,31 @@ def get_data(filters):
     data = []
     
     # ═══════════════════════════════════════════════════════════════
-    # SARLAVHA - ism va lavozim
+    # SARLAVHA - ism, lavozim, filial alohida qatorlarda
     # ═══════════════════════════════════════════════════════════════
-    name_with_designation = employee_name
-    if designation:
-        name_with_designation = f"{employee_name} ({designation})"
-    
     data.append({
         "row_num": "👤",
         "time": "XODIM:",
-        "log_type": name_with_designation,
+        "log_type": employee_name,
         "description": f"📅 Sana: {selected_date.strftime('%d-%m-%Y')}",
         "duration": ""
     })
     
-    # Kompaniya qatori (faqat admin uchun foydali)
+    # Lavozim qatori
+    if designation:
+        data.append({
+            "row_num": "",
+            "time": "💼 Lavozim:",
+            "log_type": designation,
+            "description": "",
+            "duration": ""
+        })
+    
+    # Filial qatori
     if company:
         data.append({
             "row_num": "",
-            "time": "🏢 Kompaniya:",
+            "time": "🏢 Filial:",
             "log_type": company,
             "description": "",
             "duration": ""
