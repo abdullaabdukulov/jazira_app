@@ -5,13 +5,30 @@
 frappe.query_reports["Employee Period Hours"] = {
     filters: [
         {
+            fieldname: "company",
+            label: __("Filial"),
+            fieldtype: "Link",
+            options: "Company",
+            // Faqat admin_jazira@jazira.uz uchun ko'rinadi
+            hidden: frappe.session.user !== "admin_jazira@jazira.uz",
+            on_change: function() {
+                // Company o'zgarganda employee filterni tozalash
+                frappe.query_report.set_filter_value("employee", "");
+            }
+        },
+        {
             fieldname: "employee",
             label: __("Xodim"),
             fieldtype: "Link",
             options: "Employee",
             reqd: 1,
             get_query: function() {
-                return { filters: { status: "Active" } };
+                let filters = { status: "Active" };
+                let company = frappe.query_report.get_filter_value("company");
+                if (company) {
+                    filters.company = company;
+                }
+                return { filters: filters };
             }
         },
         {
@@ -109,7 +126,7 @@ frappe.query_reports["Employee Period Hours"] = {
         report.page.add_inner_button(__("Bu hafta"), function() {
             const today = frappe.datetime.get_today();
             const dayOfWeek = new Date(today).getDay();
-            const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday = 0
+            const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
             const monday = frappe.datetime.add_days(today, -diff);
             
             frappe.query_report.set_filter_value("from_date", monday);

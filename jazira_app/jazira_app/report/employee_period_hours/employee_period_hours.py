@@ -4,6 +4,8 @@
 Davriy Ish Vaqti Hisoboti (Employee Period Hours Report)
 
 Xodimning tanlangan davr uchun kunlik ish vaqti va maosh hisoboti
++ Designation (lavozim) ko'rsatiladi
++ Company filter faqat admin uchun
 """
 
 import frappe
@@ -95,16 +97,24 @@ def get_data(filters):
     if date_diff(to_date, from_date) > 62:
         frappe.throw(_("Maksimum 2 oy (62 kun) tanlash mumkin"))
     
-    # Xodim ma'lumotlari
+    # Xodim ma'lumotlari (designation qo'shildi)
     emp = frappe.db.get_value(
         "Employee",
         employee,
-        ["employee_name", "hourly_rate"],
+        ["employee_name", "designation", "hourly_rate", "company"],
         as_dict=True
     ) or {}
     
     employee_name = emp.get("employee_name") or employee
+    designation = emp.get("designation") or ""
     hourly_rate = flt(emp.get("hourly_rate") or 0)
+    company = emp.get("company") or ""
+    
+    # Xodim ismi + lavozimi
+    if designation:
+        employee_display = f"{employee_name} ({designation})"
+    else:
+        employee_display = employee_name
     
     # Loglarni olish
     search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
@@ -233,13 +243,18 @@ def get_data(filters):
         "is_total": True
     })
     
-    # Report summary (yuqorida ko'rinadi)
+    # Report summary (yuqorida ko'rinadi) - DESIGNATION qo'shildi
     report_summary = [
         {
             "label": _("Xodim"),
-            "value": employee_name,
+            "value": employee_display,  # Ism + Lavozim
             "datatype": "Data",
             "indicator": "blue"
+        },
+        {
+            "label": _("Filial"),
+            "value": company,
+            "datatype": "Data"
         },
         {
             "label": _("Davr"),

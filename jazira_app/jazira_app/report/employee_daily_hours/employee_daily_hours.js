@@ -5,13 +5,29 @@
 frappe.query_reports["Employee Daily Hours"] = {
     filters: [
         {
+            fieldname: "company",
+            label: __("Kompaniya"),
+            fieldtype: "Link",
+            options: "Company",
+            hidden: 1,  // Default yashirin, faqat admin uchun ko'rinadi
+            on_change: function() {
+                // Company o'zgarganda Employee filterini yangilash
+                frappe.query_report.set_filter_value("employee", "");
+            }
+        },
+        {
             fieldname: "employee",
             label: __("Xodim"),
             fieldtype: "Link",
             options: "Employee",
             reqd: 1,
             get_query: function() {
-                return { filters: { status: "Active" } };
+                let company = frappe.query_report.get_filter_value("company");
+                let filters = { status: "Active" };
+                if (company) {
+                    filters.company = company;
+                }
+                return { filters: filters };
             }
         },
         {
@@ -96,7 +112,13 @@ frappe.query_reports["Employee Daily Hours"] = {
     },
 
     onload: function(report) {
-        // Avtomatik yuklash
+        // admin_jazira@jazira.uz uchun Company filterni ko'rsatish
+        if (frappe.session.user === "admin_jazira@jazira.uz") {
+            frappe.query_report.get_filter("company").df.hidden = 0;
+            frappe.query_report.refresh_filters();
+        }
+        
+        // Avtomatik yuklash tugmalari
         report.page.add_inner_button(__("Bugun"), function() {
             frappe.query_report.set_filter_value("date", frappe.datetime.get_today());
             frappe.query_report.refresh();
