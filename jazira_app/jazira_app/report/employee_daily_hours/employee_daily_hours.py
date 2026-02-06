@@ -1,18 +1,16 @@
 # Copyright (c) 2026, Jazira App
 # License: MIT
 """
-Kunlik Ish Vaqti Hisoboti (Employee Daily Hours Report)
+Davriy Ish Vaqti Hisoboti (Employee Period Hours Report)
 
-Sodda va tushunarli format:
-- Keldi/Ketdi vaqtlari
-- Ish vaqti (soat:minut)
-- Tanaffus vaqti
-- Kunlik daromad
+Xodimning tanlangan davr uchun kunlik ish vaqti va maosh hisoboti
++ Designation (lavozim) ko'rsatiladi
++ Company filter faqat admin uchun
 """
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, flt
+from frappe.utils import getdate, add_days, date_diff, flt
 from datetime import datetime, timedelta, time as dt_time
 
 
@@ -22,45 +20,65 @@ def execute(filters=None):
     
     if not filters.get("employee"):
         frappe.throw(_("Xodimni tanlang"))
-    if not filters.get("date"):
-        frappe.throw(_("Sanani tanlang"))
+    if not filters.get("from_date"):
+        frappe.throw(_("Boshlanish sanasini tanlang"))
+    if not filters.get("to_date"):
+        frappe.throw(_("Tugash sanasini tanlang"))
     
     columns = get_columns()
-    data = get_data(filters)
+    data, report_summary, chart = get_data(filters)
     
-    return columns, data
+    return columns, data, None, chart, report_summary
 
 
 def get_columns():
-    """Keng ustunlar - biznes uchun qulay"""
+    """Sodda ustunlar"""
     return [
         {
-            "label": _("#"),
-            "fieldname": "row_num",
-            "fieldtype": "Data",
-            "width": 60
+            "label": _("Sana"),
+            "fieldname": "date",
+            "fieldtype": "Date",
+            "width": 100
         },
         {
-            "label": _("Vaqt / Sarlavha"),
-            "fieldname": "time",
+            "label": _("Kun"),
+            "fieldname": "day_name",
             "fieldtype": "Data",
-            "width": 150
+            "width": 90
         },
         {
-            "label": _("Qiymat / Turi"),
-            "fieldname": "log_type",
+            "label": _("Keldi"),
+            "fieldname": "first_in",
             "fieldtype": "Data",
-            "width": 200
+            "width": 80
         },
         {
-            "label": _("Izoh / Qo'shimcha"),
-            "fieldname": "description",
+            "label": _("Ketdi"),
+            "fieldname": "last_out",
             "fieldtype": "Data",
-            "width": 280
+            "width": 80
         },
         {
-            "label": _("Davomiylik"),
-            "fieldname": "duration",
+            "label": _("Ishladi"),
+            "fieldname": "worked",
+            "fieldtype": "Data",
+            "width": 80
+        },
+        {
+            "label": _("Tanaffus"),
+            "fieldname": "breaks",
+            "fieldtype": "Data",
+            "width": 80
+        },
+        {
+            "label": _("Maosh"),
+            "fieldname": "earnings",
+            "fieldtype": "Currency",
+            "width": 120
+        },
+        {
+            "label": _("Holat"),
+            "fieldname": "status",
             "fieldtype": "Data",
             "width": 120
         }
@@ -69,205 +87,229 @@ def get_columns():
 
 def get_data(filters):
     employee = filters.get("employee")
-    selected_date = getdate(filters.get("date"))
+    from_date = getdate(filters.get("from_date"))
+    to_date = getdate(filters.get("to_date"))
     
-    # Xodim ma'lumotlari
+    # Validatsiya
+    if from_date > to_date:
+        frappe.throw(_("Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas"))
+    
+    if date_diff(to_date, from_date) > 62:
+        frappe.throw(_("Maksimum 2 oy (62 kun) tanlash mumkin"))
+    
+    # Xodim ma'lumotlari (designation qo'shildi)
     emp = frappe.db.get_value(
         "Employee",
         employee,
-        ["employee_name", "hourly_rate"],
+        ["employee_name", "designation", "hourly_rate", "company"],
         as_dict=True
     ) or {}
     
     employee_name = emp.get("employee_name") or employee
+    designation = emp.get("designation") or ""
     hourly_rate = flt(emp.get("hourly_rate") or 0)
+    company = emp.get("company") or ""
     
-    # Loglarni olish (bugun va ertangi kun ertalab)
-    logs = get_employee_logs(employee, selected_date)
-    
-    data = []
-    
-    # ═══════════════════════════════════════════════════════════════
-    # SARLAVHA
-    # ═══════════════════════════════════════════════════════════════
-    data.append({
-        "row_num": "👤",
-        "time": "XODIM:",
-        "log_type": employee_name,
-        "description": f"📅 Sana: {selected_date.strftime('%d-%m-%Y')}",
-        "duration": ""
-    })
-    
-    data.append({})  # Bo'sh qator
-    
-    if not logs:
-        # Log yo'q
-        data.append({
-            "row_num": "⚠️",
-            "time": "",
-            "log_type": "LOG YO'Q",
-            "description": "Bu sana uchun hech qanday kirish/chiqish qayd etilmagan",
-            "duration": ""
-        })
-        return data
-    
-    # ═══════════════════════════════════════════════════════════════
-    # HISOB-KITOB
-    # ═══════════════════════════════════════════════════════════════
-    result = calculate_work_time(logs, selected_date)
-    
-    # KELDI vaqti
-    first_in_str = result["first_in"].strftime("%H:%M") if result["first_in"] else "—"
-    
-    # KETDI vaqti
-    if result["last_out"]:
-        if result["last_out"].date() != selected_date:
-            last_out_str = result["last_out"].strftime("%d-%m %H:%M")
-        else:
-            last_out_str = result["last_out"].strftime("%H:%M")
+    # Xodim ismi + lavozimi
+    if designation:
+        employee_display = f"{employee_name} ({designation})"
     else:
-        last_out_str = "—"
+        employee_display = employee_name
     
-    # Ish vaqti
-    worked_str = format_minutes(result["worked_minutes"])
-    
-    # Tanaffus
-    break_str = format_minutes(result["break_minutes"]) if result["break_minutes"] > 0 else "—"
-    
-    # Daromad
-    worked_hours = result["worked_minutes"] / 60.0
-    earnings = worked_hours * hourly_rate
-    
-    # ═══════════════════════════════════════════════════════════════
-    # XULOSA QATORI
-    # ═══════════════════════════════════════════════════════════════
-    data.append({
-        "row_num": "📊",
-        "time": "XULOSA",
-        "log_type": "",
-        "description": "",
-        "duration": ""
-    })
-    
-    data.append({
-        "row_num": "",
-        "time": "🟢 Keldi",
-        "log_type": first_in_str,
-        "description": f"🔴 Ketdi: {last_out_str}",
-        "duration": ""
-    })
-    
-    data.append({
-        "row_num": "",
-        "time": "⏱️ Ish vaqti",
-        "log_type": worked_str,
-        "description": f"☕ Tanaffus: {break_str}",
-        "duration": ""
-    })
-    
-    if hourly_rate > 0:
-        data.append({
-            "row_num": "",
-            "time": "💰 Daromad",
-            "log_type": f"{earnings:,.0f} UZS",
-            "description": f"Stavka: {hourly_rate:,.0f} UZS/soat",
-            "duration": ""
-        })
-    
-    # Status
-    status_icon = "✅" if result["status"] == "OK" else "⚠️"
-    status_text = get_status_text(result["status"])
-    data.append({
-        "row_num": "",
-        "time": f"{status_icon} Holat",
-        "log_type": status_text,
-        "description": "",
-        "duration": ""
-    })
-    
-    data.append({})  # Bo'sh qator
-    
-    # ═══════════════════════════════════════════════════════════════
-    # LOGLAR RO'YXATI
-    # ═══════════════════════════════════════════════════════════════
-    data.append({
-        "row_num": "📋",
-        "time": "LOGLAR",
-        "log_type": f"({len(result['logs'])} ta)",
-        "description": "",
-        "duration": ""
-    })
-    
-    data.append({
-        "row_num": "#",
-        "time": "Vaqt",
-        "log_type": "Turi",
-        "description": "Izoh",
-        "duration": ""
-    })
-    
-    prev_time = None
-    for i, log in enumerate(result["logs"], 1):
-        log_time = log["time"]
-        
-        # Vaqt formati
-        if log_time.date() != selected_date:
-            time_str = log_time.strftime("%d-%m %H:%M")
-        else:
-            time_str = log_time.strftime("%H:%M")
-        
-        # Turi va rang
-        log_type_display = get_log_type_display(log["type"], log["reason"])
-        
-        # Izoh
-        description = get_log_description(log["type"], log["reason"])
-        
-        # Davomiylik (oldingi logdan)
-        duration_str = ""
-        if prev_time and log["type"] in ["OUT", "TEMP_OUT"]:
-            delta = log_time - prev_time
-            minutes = int(delta.total_seconds() / 60)
-            if minutes > 0:
-                duration_str = format_minutes(minutes)
-        
-        data.append({
-            "row_num": str(i),
-            "time": time_str,
-            "log_type": log_type_display,
-            "description": description,
-            "duration": duration_str
-        })
-        
-        prev_time = log_time
-    
-    return data
-
-
-def get_employee_logs(employee, selected_date):
-    """Xodim loglarini olish (bugun + ertangi kun ertalab)"""
-    from frappe.utils import add_days
-    
-    next_day = add_days(selected_date, 1)
-    
-    # Bugungi barcha loglar + ertangi kun 12:00 gacha
-    day_start = datetime.combine(selected_date, dt_time.min)
-    search_end = datetime.combine(next_day, dt_time(12, 0, 0))
+    # Loglarni olish
+    search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
+    search_end = datetime.combine(add_days(to_date, 1), dt_time(12, 0, 0))
     
     logs = frappe.db.sql("""
         SELECT name, time, log_type, checkin_reason
         FROM `tabEmployee Checkin`
-        WHERE employee = %s 
-          AND time >= %s 
-          AND time <= %s
+        WHERE employee = %s AND time >= %s AND time <= %s
         ORDER BY time ASC
-    """, (employee, day_start, search_end), as_dict=True)
+    """, (employee, search_start, search_end), as_dict=True)
     
-    return logs
+    # Kun nomlari
+    day_names = {
+        0: "Dushanba",
+        1: "Seshanba", 
+        2: "Chorshanba",
+        3: "Payshanba",
+        4: "Juma",
+        5: "Shanba",
+        6: "Yakshanba"
+    }
+    
+    data = []
+    total_worked = 0
+    total_breaks = 0
+    total_earnings = 0.0
+    days_worked = 0
+    days_total = 0
+    
+    # Chart uchun ma'lumotlar
+    chart_labels = []
+    chart_worked = []
+    
+    current_date = from_date
+    while current_date <= to_date:
+        days_total += 1
+        day_result = calculate_day(logs, current_date)
+        
+        # Kun nomi
+        day_name = day_names.get(current_date.weekday(), "")
+        is_weekend = current_date.weekday() >= 5
+        
+        # Keldi vaqti
+        first_in_str = "—"
+        if day_result["first_in"]:
+            first_in_str = day_result["first_in"].strftime("%H:%M")
+        
+        # Ketdi vaqti
+        last_out_str = "—"
+        if day_result["last_out"]:
+            lo = day_result["last_out"]
+            if lo.date() != current_date:
+                last_out_str = lo.strftime("%d-%m %H:%M")
+            else:
+                last_out_str = lo.strftime("%H:%M")
+        
+        # Ishlagan vaqt
+        worked_str = format_minutes(day_result["worked_minutes"])
+        breaks_str = format_minutes(day_result["break_minutes"]) if day_result["break_minutes"] > 0 else "—"
+        
+        # Kunlik maosh
+        worked_hours = day_result["worked_minutes"] / 60.0
+        daily_earnings = worked_hours * hourly_rate
+        
+        # Holat
+        status = get_status_display(day_result["status"], is_weekend)
+        
+        row = {
+            "date": current_date,
+            "day_name": day_name,
+            "first_in": first_in_str,
+            "last_out": last_out_str,
+            "worked": worked_str if day_result["worked_minutes"] > 0 else "—",
+            "breaks": breaks_str,
+            "earnings": daily_earnings if daily_earnings > 0 else None,
+            "status": status,
+            "is_weekend": is_weekend,
+            "worked_minutes": day_result["worked_minutes"]
+        }
+        
+        data.append(row)
+        
+        # Jami hisob
+        if day_result["worked_minutes"] > 0:
+            total_worked += day_result["worked_minutes"]
+            total_breaks += day_result["break_minutes"]
+            total_earnings += daily_earnings
+            days_worked += 1
+        
+        # Chart uchun
+        chart_labels.append(current_date.strftime("%d"))
+        chart_worked.append(round(day_result["worked_minutes"] / 60, 1))
+        
+        current_date = add_days(current_date, 1)
+    
+    # Bo'sh qator
+    data.append({})
+    
+    # JAMI qatori
+    data.append({
+        "date": None,
+        "day_name": "📊 JAMI:",
+        "first_in": f"{days_worked} kun",
+        "last_out": "",
+        "worked": format_minutes(total_worked),
+        "breaks": format_minutes(total_breaks) if total_breaks > 0 else "—",
+        "earnings": total_earnings,
+        "status": "",
+        "is_total": True
+    })
+    
+    # O'rtacha
+    avg_worked = total_worked / days_worked if days_worked > 0 else 0
+    avg_earnings = total_earnings / days_worked if days_worked > 0 else 0
+    
+    data.append({
+        "date": None,
+        "day_name": "📈 O'rtacha:",
+        "first_in": "",
+        "last_out": "",
+        "worked": format_minutes(int(avg_worked)),
+        "breaks": "",
+        "earnings": avg_earnings if avg_earnings > 0 else None,
+        "status": "/kun",
+        "is_total": True
+    })
+    
+    # Report summary (yuqorida ko'rinadi) - DESIGNATION qo'shildi
+    report_summary = [
+        {
+            "label": _("Xodim"),
+            "value": employee_display,  # Ism + Lavozim
+            "datatype": "Data",
+            "indicator": "blue"
+        },
+        {
+            "label": _("Filial"),
+            "value": company,
+            "datatype": "Data"
+        },
+        {
+            "label": _("Davr"),
+            "value": f"{from_date.strftime('%d-%m')} — {to_date.strftime('%d-%m-%Y')}",
+            "datatype": "Data"
+        },
+        {
+            "label": _("Ishlagan kunlar"),
+            "value": f"{days_worked} / {days_total}",
+            "datatype": "Data",
+            "indicator": "green" if days_worked >= days_total * 0.8 else "orange"
+        },
+        {
+            "label": _("Jami soat"),
+            "value": format_minutes(total_worked),
+            "datatype": "Data",
+            "indicator": "blue"
+        },
+        {
+            "label": _("Soatlik stavka"),
+            "value": frappe.format_value(hourly_rate, {"fieldtype": "Currency"}),
+            "datatype": "Data"
+        },
+        {
+            "label": _("💰 JAMI MAOSH"),
+            "value": total_earnings,
+            "datatype": "Currency",
+            "indicator": "green"
+        }
+    ]
+    
+    # Chart
+    chart = {
+        "data": {
+            "labels": chart_labels,
+            "datasets": [
+                {
+                    "name": _("Ishlagan soat"),
+                    "values": chart_worked
+                }
+            ]
+        },
+        "type": "bar",
+        "colors": ["#5e64ff"],
+        "barOptions": {
+            "spaceRatio": 0.3
+        },
+        "height": 200
+    }
+    
+    return data, report_summary, chart
 
 
-def calculate_work_time(logs, selected_date):
-    """Ish vaqtini hisoblash"""
-    from frappe.utils import add_days
+def calculate_day(all_logs, selected_date):
+    """Kunlik ish vaqtini hisoblash"""
     
     next_day = add_days(selected_date, 1)
     
@@ -276,79 +318,83 @@ def calculate_work_time(logs, selected_date):
         "last_out": None,
         "worked_minutes": 0,
         "break_minutes": 0,
-        "status": "OK",
-        "logs": []
+        "status": "NO_LOG"
     }
     
-    # Loglarni qayta ishlash
-    processed_logs = []
-    for log in logs:
-        log_type = log.log_type
-        reason = log.checkin_reason or log_type
-        
-        processed_logs.append({
-            "time": log.time,
-            "type": log_type,
-            "reason": reason
-        })
+    # Bugungi loglar
+    today_logs = [l for l in all_logs if l.time.date() == selected_date]
     
-    result["logs"] = processed_logs
+    # Ertangi ertalabki loglar (tungi smena uchun)
+    next_early = [l for l in all_logs 
+                  if l.time.date() == next_day 
+                  and l.time.hour < 12]
     
-    if not processed_logs:
-        result["status"] = "NO_LOGS"
+    # IN loglar (RETURN emas)
+    in_logs = [l for l in today_logs 
+               if l.log_type == "IN" and l.checkin_reason != "RETURN"]
+    
+    # OUT loglar (TEMP_OUT emas)
+    out_logs = [l for l in today_logs + next_early 
+                if l.log_type == "OUT" and l.checkin_reason != "TEMP_OUT"]
+    
+    if not in_logs:
+        if out_logs:
+            result["last_out"] = out_logs[-1].time
+            result["status"] = "MISSING_IN"
         return result
     
-    # First IN (RETURN emas)
-    in_logs = [l for l in processed_logs if l["type"] == "IN" and l["reason"] != "RETURN"]
-    if in_logs:
-        result["first_in"] = in_logs[0]["time"]
+    # First IN
+    result["first_in"] = min(in_logs, key=lambda x: x.time).time
     
-    # Last OUT (TEMP_OUT emas)
-    out_logs = [l for l in processed_logs if l["type"] == "OUT" and l["reason"] != "TEMP_OUT"]
+    # Last OUT
     if out_logs:
-        result["last_out"] = out_logs[-1]["time"]
+        result["last_out"] = max(out_logs, key=lambda x: x.time).time
     
-    # Ish vaqtini hisoblash (First IN to Last OUT)
+    # Ish vaqtini hisoblash
     if result["first_in"] and result["last_out"]:
         total_delta = result["last_out"] - result["first_in"]
         total_minutes = int(total_delta.total_seconds() / 60)
         
         # Tanaffuslarni hisoblash
-        break_minutes = calculate_breaks(processed_logs)
+        break_minutes = calculate_breaks(today_logs)
         result["break_minutes"] = break_minutes
         
-        # Sof ish vaqti = Jami - Tanaffus
+        # Sof ish vaqti
         result["worked_minutes"] = max(0, total_minutes - break_minutes)
+        result["status"] = "OK"
     elif result["first_in"] and not result["last_out"]:
         result["status"] = "MISSING_OUT"
-    elif not result["first_in"]:
-        result["status"] = "MISSING_IN"
     
     return result
 
 
 def calculate_breaks(logs):
-    """Tanaffus vaqtini hisoblash (TEMP_OUT dan RETURN gacha)"""
+    """Tanaffus vaqtini hisoblash"""
     break_minutes = 0
     
-    temp_outs = [l for l in logs if l["reason"] == "TEMP_OUT"]
-    returns = [l for l in logs if l["reason"] == "RETURN"]
+    temp_outs = sorted(
+        [l for l in logs if l.checkin_reason == "TEMP_OUT"],
+        key=lambda x: x.time
+    )
+    returns = sorted(
+        [l for l in logs if l.checkin_reason == "RETURN"],
+        key=lambda x: x.time
+    )
     
-    used_returns = set()
-    
+    used = set()
     for to in temp_outs:
         for i, ret in enumerate(returns):
-            if i not in used_returns and ret["time"] > to["time"]:
-                delta = ret["time"] - to["time"]
+            if i not in used and ret.time > to.time:
+                delta = ret.time - to.time
                 break_minutes += int(delta.total_seconds() / 60)
-                used_returns.add(i)
+                used.add(i)
                 break
     
     return break_minutes
 
 
 def format_minutes(minutes):
-    """Minutlarni HH:MM formatga o'girish"""
+    """Minutlarni HH:MM formatga"""
     if minutes <= 0:
         return "00:00"
     hours = minutes // 60
@@ -356,38 +402,16 @@ def format_minutes(minutes):
     return f"{hours:02d}:{mins:02d}"
 
 
-def get_log_type_display(log_type, reason):
-    """Log turini chiroyli ko'rsatish"""
-    if reason == "TEMP_OUT":
-        return "🟠 CHIQDI (tanaffus)"
-    elif reason == "RETURN":
-        return "🟣 QAYTDI"
-    elif log_type == "IN":
-        return "🟢 KELDI"
-    elif log_type == "OUT":
-        return "🔴 KETDI"
-    return log_type
-
-
-def get_log_description(log_type, reason):
-    """Log uchun izoh"""
-    if reason == "TEMP_OUT":
-        return "Tanaffusga chiqdi"
-    elif reason == "RETURN":
-        return "Tanaffusdan qaytdi"
-    elif log_type == "IN" and reason == "IN":
-        return "Ishga keldi"
-    elif log_type == "OUT" and reason == "OUT":
-        return "Ishdan ketdi"
-    return ""
-
-
-def get_status_text(status):
-    """Status matnini o'zbek tilida"""
-    status_map = {
-        "OK": "Normada ✓",
-        "MISSING_OUT": "Chiqish vaqti qayd etilmagan",
-        "MISSING_IN": "Kirish vaqti qayd etilmagan",
-        "NO_LOGS": "Log yo'q"
-    }
-    return status_map.get(status, status)
+def get_status_display(status, is_weekend=False):
+    """Holatni o'zbek tilida"""
+    if status == "OK":
+        return "✅ Normada"
+    elif status == "MISSING_OUT":
+        return "⚠️ Chiqmagan"
+    elif status == "MISSING_IN":
+        return "⚠️ Kelmagan"
+    elif status == "NO_LOG":
+        if is_weekend:
+            return "🔵 Dam olish"
+        return "⬜ Log yo'q"
+    return status

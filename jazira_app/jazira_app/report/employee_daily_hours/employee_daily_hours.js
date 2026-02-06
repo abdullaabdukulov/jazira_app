@@ -1,9 +1,21 @@
 // Copyright (c) 2026, Jazira App
 // License: MIT
-// Kunlik Ish Vaqti Hisoboti
+// Davriy Ish Vaqti Hisoboti
 
-frappe.query_reports["Employee Daily Hours"] = {
+frappe.query_reports["Employee Period Hours"] = {
     filters: [
+        {
+            fieldname: "company",
+            label: __("Filial"),
+            fieldtype: "Link",
+            options: "Company",
+            // Faqat admin_jazira@jazira.uz uchun ko'rinadi
+            hidden: frappe.session.user !== "admin_jazira@jazira.uz",
+            on_change: function() {
+                // Company o'zgarganda employee filterni tozalash
+                frappe.query_report.set_filter_value("employee", "");
+            }
+        },
         {
             fieldname: "employee",
             label: __("Xodim"),
@@ -11,12 +23,24 @@ frappe.query_reports["Employee Daily Hours"] = {
             options: "Employee",
             reqd: 1,
             get_query: function() {
-                return { filters: { status: "Active" } };
+                let filters = { status: "Active" };
+                let company = frappe.query_report.get_filter_value("company");
+                if (company) {
+                    filters.company = company;
+                }
+                return { filters: filters };
             }
         },
         {
-            fieldname: "date",
-            label: __("Sana"),
+            fieldname: "from_date",
+            label: __("Boshlanish"),
+            fieldtype: "Date",
+            reqd: 1,
+            default: frappe.datetime.month_start()
+        },
+        {
+            fieldname: "to_date",
+            label: __("Tugash"),
             fieldtype: "Date",
             reqd: 1,
             default: frappe.datetime.get_today()
@@ -28,83 +52,85 @@ frappe.query_reports["Employee Daily Hours"] = {
         
         if (!data) return value;
         
-        // Sarlavha qatorlari
-        if (data.row_num === "👤" || data.row_num === "📊" || data.row_num === "📋") {
-            return `<strong style="font-size: 14px;">${value}</strong>`;
+        // JAMI va O'rtacha qatorlari
+        if (data.is_total) {
+            return `<strong style="font-size: 13px;">${value}</strong>`;
         }
         
-        // Ustun sarlavhasi
-        if (data.row_num === "#" && column.fieldname === "row_num") {
-            return `<strong style="background: #f5f5f5; padding: 4px 8px;">${value}</strong>`;
+        // Dam olish kuni (Shanba/Yakshanba)
+        if (data.is_weekend && column.fieldname === "day_name") {
+            return `<span style="color: #6c757d;">${value}</span>`;
         }
         
-        // Status ranglari
-        if (column.fieldname === "log_type") {
-            if (data.log_type && data.log_type.includes("Normada")) {
-                return `<span style="color: green; font-weight: bold;">${value}</span>`;
-            }
-            if (data.log_type && (data.log_type.includes("qayd etilmagan") || data.log_type.includes("yo'q"))) {
-                return `<span style="color: red; font-weight: bold;">${value}</span>`;
-            }
-            // Ish vaqti (8+ soat yashil)
-            if (data.time && data.time.includes("Ish vaqti")) {
-                const match = value.match(/(\d+):(\d+)/);
-                if (match) {
-                    const hours = parseInt(match[1]);
-                    if (hours >= 8) {
-                        return `<span style="color: green; font-weight: bold;">${value}</span>`;
-                    } else if (hours >= 4) {
-                        return `<span style="color: orange; font-weight: bold;">${value}</span>`;
-                    } else if (hours > 0) {
-                        return `<span style="color: red;">${value}</span>`;
-                    }
-                }
-            }
-            // Daromad
-            if (data.time && data.time.includes("Daromad")) {
-                return `<span style="color: green; font-weight: bold; font-size: 13px;">${value}</span>`;
-            }
-        }
-        
-        // Log turlari uchun rang
-        if (column.fieldname === "log_type" && data.row_num && !isNaN(data.row_num)) {
-            if (value.includes("KELDI")) {
+        // Holat ranglari
+        if (column.fieldname === "status") {
+            if (value.includes("Normada")) {
                 return `<span style="color: #28a745;">${value}</span>`;
             }
-            if (value.includes("KETDI") && !value.includes("tanaffus")) {
+            if (value.includes("Chiqmagan") || value.includes("Kelmagan")) {
                 return `<span style="color: #dc3545;">${value}</span>`;
             }
-            if (value.includes("CHIQDI") && value.includes("tanaffus")) {
+            if (value.includes("Dam olish")) {
+                return `<span style="color: #6c757d;">${value}</span>`;
+            }
+            if (value.includes("Log yo'q")) {
+                return `<span style="color: #adb5bd;">${value}</span>`;
+            }
+        }
+        
+        // Ishlagan vaqt ranglari
+        if (column.fieldname === "worked" && data.worked_minutes !== undefined) {
+            const hours = data.worked_minutes / 60;
+            if (hours >= 8) {
+                return `<span style="color: #28a745; font-weight: bold;">${value}</span>`;
+            } else if (hours >= 6) {
                 return `<span style="color: #fd7e14;">${value}</span>`;
-            }
-            if (value.includes("QAYTDI")) {
-                return `<span style="color: #6f42c1;">${value}</span>`;
+            } else if (hours > 0 && hours < 6) {
+                return `<span style="color: #dc3545;">${value}</span>`;
             }
         }
         
-        // Vaqt ustuni
-        if (column.fieldname === "time" && data.row_num && !isNaN(data.row_num)) {
-            return `<span style="font-family: monospace; font-size: 13px;">${value}</span>`;
+        // Keldi/Ketdi vaqtlari (monospace)
+        if ((column.fieldname === "first_in" || column.fieldname === "last_out") && 
+            value !== "—" && !data.is_total) {
+            return `<span style="font-family: monospace;">${value}</span>`;
         }
         
-        // Davomiylik
-        if (column.fieldname === "duration" && value && value !== "—") {
-            return `<span style="color: #6c757d; font-style: italic;">${value}</span>`;
+        // Tanaffus (sariq)
+        if (column.fieldname === "breaks" && value !== "—") {
+            return `<span style="color: #fd7e14;">${value}</span>`;
         }
         
         return value;
     },
 
     onload: function(report) {
-        // Avtomatik yuklash
-        report.page.add_inner_button(__("Bugun"), function() {
-            frappe.query_report.set_filter_value("date", frappe.datetime.get_today());
+        // Tez filtrlar
+        report.page.add_inner_button(__("Bu oy"), function() {
+            frappe.query_report.set_filter_value("from_date", frappe.datetime.month_start());
+            frappe.query_report.set_filter_value("to_date", frappe.datetime.get_today());
             frappe.query_report.refresh();
         });
         
-        report.page.add_inner_button(__("Kecha"), function() {
-            const yesterday = frappe.datetime.add_days(frappe.datetime.get_today(), -1);
-            frappe.query_report.set_filter_value("date", yesterday);
+        report.page.add_inner_button(__("O'tgan oy"), function() {
+            const today = frappe.datetime.get_today();
+            const firstDayThisMonth = frappe.datetime.month_start();
+            const lastDayPrevMonth = frappe.datetime.add_days(firstDayThisMonth, -1);
+            const firstDayPrevMonth = frappe.datetime.add_months(firstDayThisMonth, -1);
+            
+            frappe.query_report.set_filter_value("from_date", firstDayPrevMonth);
+            frappe.query_report.set_filter_value("to_date", lastDayPrevMonth);
+            frappe.query_report.refresh();
+        });
+        
+        report.page.add_inner_button(__("Bu hafta"), function() {
+            const today = frappe.datetime.get_today();
+            const dayOfWeek = new Date(today).getDay();
+            const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const monday = frappe.datetime.add_days(today, -diff);
+            
+            frappe.query_report.set_filter_value("from_date", monday);
+            frappe.query_report.set_filter_value("to_date", today);
             frappe.query_report.refresh();
         });
     }
