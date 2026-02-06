@@ -12,7 +12,6 @@ frappe.query_reports["Employee Period Hours"] = {
             // Faqat admin_jazira@jazira.uz uchun ko'rinadi
             hidden: frappe.session.user !== "admin_jazira@jazira.uz",
             on_change: function() {
-                // Company o'zgarganda employee filterni tozalash
                 frappe.query_report.set_filter_value("employee", "");
             }
         },

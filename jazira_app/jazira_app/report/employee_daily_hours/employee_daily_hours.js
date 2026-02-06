@@ -6,12 +6,12 @@ frappe.query_reports["Employee Daily Hours"] = {
     filters: [
         {
             fieldname: "company",
-            label: __("Kompaniya"),
+            label: __("Filial"),
             fieldtype: "Link",
             options: "Company",
-            hidden: 1,  // Default yashirin, faqat admin uchun ko'rinadi
+            // Faqat admin_jazira@jazira.uz uchun ko'rinadi
+            hidden: frappe.session.user !== "admin_jazira@jazira.uz",
             on_change: function() {
-                // Company o'zgarganda Employee filterini yangilash
                 frappe.query_report.set_filter_value("employee", "");
             }
         },
@@ -22,8 +22,8 @@ frappe.query_reports["Employee Daily Hours"] = {
             options: "Employee",
             reqd: 1,
             get_query: function() {
-                let company = frappe.query_report.get_filter_value("company");
                 let filters = { status: "Active" };
+                let company = frappe.query_report.get_filter_value("company");
                 if (company) {
                     filters.company = company;
                 }
@@ -62,7 +62,6 @@ frappe.query_reports["Employee Daily Hours"] = {
             if (data.log_type && (data.log_type.includes("qayd etilmagan") || data.log_type.includes("yo'q"))) {
                 return `<span style="color: red; font-weight: bold;">${value}</span>`;
             }
-            // Ish vaqti (8+ soat yashil)
             if (data.time && data.time.includes("Ish vaqti")) {
                 const match = value.match(/(\d+):(\d+)/);
                 if (match) {
@@ -76,7 +75,6 @@ frappe.query_reports["Employee Daily Hours"] = {
                     }
                 }
             }
-            // Daromad
             if (data.time && data.time.includes("Daromad")) {
                 return `<span style="color: green; font-weight: bold; font-size: 13px;">${value}</span>`;
             }
@@ -112,12 +110,6 @@ frappe.query_reports["Employee Daily Hours"] = {
     },
 
     onload: function(report) {
-        // admin_jazira@jazira.uz uchun Company filterni ko'rsatish
-        if (frappe.session.user === "admin_jazira@jazira.uz") {
-            frappe.query_report.get_filter("company").df.hidden = 0;
-            frappe.query_report.refresh_filters();
-        }
-        
         // Avtomatik yuklash tugmalari
         report.page.add_inner_button(__("Bugun"), function() {
             frappe.query_report.set_filter_value("date", frappe.datetime.get_today());
