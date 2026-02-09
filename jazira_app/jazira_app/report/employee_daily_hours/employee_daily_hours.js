@@ -20,7 +20,7 @@ frappe.query_reports["Employee Daily Hours"] = {
             label: __("Xodim"),
             fieldtype: "Link",
             options: "Employee",
-            reqd: 1,
+            // reqd emas - bo'sh qoldirilsa barcha xodimlar ko'rinadi
             get_query: function() {
                 let filters = { status: "Active" };
                 let company = frappe.query_report.get_filter_value("company");
@@ -110,6 +110,11 @@ frappe.query_reports["Employee Daily Hours"] = {
     },
 
     onload: function(report) {
+        // Sahifa yuklanganda avtomatik refresh (xodim tanlanmasa ham)
+        setTimeout(function() {
+            frappe.query_report.refresh();
+        }, 500);
+        
         // Avtomatik yuklash tugmalari
         report.page.add_inner_button(__("Bugun"), function() {
             frappe.query_report.set_filter_value("date", frappe.datetime.get_today());

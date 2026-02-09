@@ -20,7 +20,7 @@ frappe.query_reports["Employee Period Hours"] = {
             label: __("Xodim"),
             fieldtype: "Link",
             options: "Employee",
-            reqd: 1,
+            // reqd emas - bo'sh qoldirilsa barcha xodimlar ko'rinadi
             get_query: function() {
                 let filters = { status: "Active" };
                 let company = frappe.query_report.get_filter_value("company");
@@ -104,6 +104,11 @@ frappe.query_reports["Employee Period Hours"] = {
     },
 
     onload: function(report) {
+        // Sahifa yuklanganda avtomatik refresh (xodim tanlanmasa ham)
+        setTimeout(function() {
+            frappe.query_report.refresh();
+        }, 500);
+        
         // Tez filtrlar
         report.page.add_inner_button(__("Bu oy"), function() {
             frappe.query_report.set_filter_value("from_date", frappe.datetime.month_start());
