@@ -64,9 +64,9 @@ def get_all_employees_report(filters):
     if not employees:
         return [], []
     
-    # Ustunlarni yaratish - faqat bitta TR ustuni
+    # Ustunlarni yaratish
     columns = [
-        {"label": _("TR"), "fieldname": "idx", "fieldtype": "Data", "width": 40},
+        {"label": _("#"), "fieldname": "idx", "fieldtype": "Data", "width": 30},
         {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 160},
     ]
     
