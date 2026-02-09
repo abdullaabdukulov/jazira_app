@@ -104,10 +104,13 @@ frappe.query_reports["Employee Period Hours"] = {
     },
 
     onload: function(report) {
-        // Sahifa yuklanganda avtomatik refresh (xodim tanlanmasa ham)
-        setTimeout(function() {
-            frappe.query_report.refresh();
-        }, 500);
+        // Bir marta refresh (faqat birinchi yuklashda)
+        if (!report._initial_loaded) {
+            report._initial_loaded = true;
+            setTimeout(function() {
+                frappe.query_report.refresh();
+            }, 300);
+        }
         
         // Tez filtrlar
         report.page.add_inner_button(__("Bu oy"), function() {

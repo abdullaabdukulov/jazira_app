@@ -64,13 +64,13 @@ def get_all_employees_report(filters):
     if not employees:
         return [], []
     
-    # Ustunlarni yaratish
+    # Ustunlarni yaratish - faqat bitta TR ustuni
     columns = [
-        {"label": _("TR"), "fieldname": "idx", "fieldtype": "Int", "width": 40},
+        {"label": _("TR"), "fieldname": "idx", "fieldtype": "Data", "width": 40},
         {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 160},
     ]
     
-    # Har bir sana uchun 3 ta ustun: Keldi, Ketdi, Soati
+    # Har bir sana uchun ustun
     dates = []
     current_date = from_date
     while current_date <= to_date:
@@ -79,16 +79,16 @@ def get_all_employees_report(filters):
         dates.append({"date": current_date, "key": date_key, "label": date_str})
         
         columns.append({
-            "label": f"{date_str}",
-            "fieldname": f"date_{date_key}",
+            "label": date_str,
+            "fieldname": f"d_{date_key}",
             "fieldtype": "Data",
-            "width": 95,
+            "width": 70,
         })
         
         current_date = add_days(current_date, 1)
     
     # Jami ustuni
-    columns.append({"label": _("Jami"), "fieldname": "total_hours", "fieldtype": "Data", "width": 70})
+    columns.append({"label": _("Jami"), "fieldname": "total_hours", "fieldtype": "Data", "width": 55})
     
     # Barcha loglarni olish
     search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
@@ -114,7 +114,7 @@ def get_all_employees_report(filters):
         emp_logs = logs_by_employee.get(emp.name, [])
         
         row = {
-            "idx": idx,
+            "idx": str(idx),
             "employee_name": emp.employee_name,
         }
         
@@ -127,13 +127,14 @@ def get_all_employees_report(filters):
             if day_result["worked_minutes"] > 0:
                 first_in = day_result["first_in"].strftime("%H:%M") if day_result["first_in"] else ""
                 last_out = day_result["last_out"].strftime("%H:%M") if day_result["last_out"] else ""
-                worked = format_minutes(day_result["worked_minutes"])
                 
-                # "08:00-17:30 (9h)" formatda
-                row[f"date_{d['key']}"] = f"{first_in}-{last_out}"
+                # Qisqa format: "8-17"
+                in_h = first_in[:2].lstrip("0") or "0"
+                out_h = last_out[:2].lstrip("0") or "0"
+                row[f"d_{d['key']}"] = f"{in_h}-{out_h}"
                 total_worked += day_result["worked_minutes"]
             else:
-                row[f"date_{d['key']}"] = "—"
+                row[f"d_{d['key']}"] = "—"
         
         row["total_hours"] = format_minutes(total_worked) if total_worked > 0 else "—"
         data.append(row)
