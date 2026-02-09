@@ -13,6 +13,7 @@ frappe.query_reports["Employee Period Hours"] = {
             hidden: frappe.session.user !== "admin_jazira@jazira.uz",
             on_change: function() {
                 frappe.query_report.set_filter_value("employee", "");
+                frappe.query_report.refresh();
             }
         },
         {
