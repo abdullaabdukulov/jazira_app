@@ -55,7 +55,7 @@ def get_all_employees_report(filters):
         return [], []
     
     columns = [
-        {"label": _("TR"), "fieldname": "idx", "fieldtype": "Int", "width": 40},
+        {"label": _("#"), "fieldname": "idx", "fieldtype": "Data", "width": 30},
         {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 180},
         {"label": _("Lavozim"), "fieldname": "designation", "fieldtype": "Data", "width": 130},
         {"label": _("Keldi"), "fieldname": "first_in", "fieldtype": "Data", "width": 70},
@@ -87,7 +87,7 @@ def get_all_employees_report(filters):
             status = "Log yo'q"
         
         data.append({
-            "idx": idx,
+            "idx": str(idx),
             "employee_name": emp.employee_name,
             "designation": emp.designation or "—",
             "first_in": first_in_str,
