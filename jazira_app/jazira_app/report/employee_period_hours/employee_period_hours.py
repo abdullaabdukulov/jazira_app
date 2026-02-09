@@ -18,17 +18,127 @@ def execute(filters=None):
     if not filters:
         filters = {}
     
-    if not filters.get("employee"):
-        frappe.throw(_("Xodimni tanlang"))
     if not filters.get("from_date"):
         frappe.throw(_("Boshlanish sanasini tanlang"))
     if not filters.get("to_date"):
         frappe.throw(_("Tugash sanasini tanlang"))
     
+    # Agar xodim tanlanmagan bo'lsa - barcha xodimlar jadvali (har kun ustunda)
+    if not filters.get("employee"):
+        columns, data = get_all_employees_report(filters)
+        return columns, data, None, None, None
+    
+    # Xodim tanlangan - batafsil hisobot
     columns = get_columns()
     data, report_summary, chart = get_data(filters)
     
     return columns, data, None, chart, report_summary
+
+
+def get_all_employees_report(filters):
+    """Barcha xodimlar uchun davriy hisobot - har kun alohida ustun"""
+    from_date = getdate(filters.get("from_date"))
+    to_date = getdate(filters.get("to_date"))
+    company = filters.get("company")
+    
+    # Validatsiya
+    if from_date > to_date:
+        frappe.throw(_("Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas"))
+    
+    days_count = date_diff(to_date, from_date) + 1
+    if days_count > 31:
+        frappe.throw(_("Maksimum 31 kun tanlash mumkin (jadval uchun)"))
+    
+    # Xodimlarni olish
+    emp_filters = {"status": "Active"}
+    if company:
+        emp_filters["company"] = company
+    
+    employees = frappe.get_all(
+        "Employee",
+        filters=emp_filters,
+        fields=["name", "employee_name", "designation", "company", "hourly_rate"],
+        order_by="employee_name"
+    )
+    
+    if not employees:
+        return [], []
+    
+    # Ustunlarni yaratish
+    columns = [
+        {"label": _("TR"), "fieldname": "idx", "fieldtype": "Int", "width": 40},
+        {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 160},
+    ]
+    
+    # Har bir sana uchun 3 ta ustun: Keldi, Ketdi, Soati
+    dates = []
+    current_date = from_date
+    while current_date <= to_date:
+        date_str = current_date.strftime("%d.%m")
+        date_key = current_date.strftime("%Y%m%d")
+        dates.append({"date": current_date, "key": date_key, "label": date_str})
+        
+        columns.append({
+            "label": f"{date_str}",
+            "fieldname": f"date_{date_key}",
+            "fieldtype": "Data",
+            "width": 95,
+        })
+        
+        current_date = add_days(current_date, 1)
+    
+    # Jami ustuni
+    columns.append({"label": _("Jami"), "fieldname": "total_hours", "fieldtype": "Data", "width": 70})
+    
+    # Barcha loglarni olish
+    search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
+    search_end = datetime.combine(add_days(to_date, 1), dt_time(12, 0, 0))
+    
+    all_logs = frappe.db.sql("""
+        SELECT employee, time, log_type, checkin_reason
+        FROM `tabEmployee Checkin`
+        WHERE time >= %s AND time <= %s
+        ORDER BY time ASC
+    """, (search_start, search_end), as_dict=True)
+    
+    # Loglarni employee bo'yicha guruhlash
+    logs_by_employee = {}
+    for log in all_logs:
+        if log.employee not in logs_by_employee:
+            logs_by_employee[log.employee] = []
+        logs_by_employee[log.employee].append(log)
+    
+    data = []
+    
+    for idx, emp in enumerate(employees, 1):
+        emp_logs = logs_by_employee.get(emp.name, [])
+        
+        row = {
+            "idx": idx,
+            "employee_name": emp.employee_name,
+        }
+        
+        total_worked = 0
+        
+        # Har bir kun uchun
+        for d in dates:
+            day_result = calculate_day(emp_logs, d["date"])
+            
+            if day_result["worked_minutes"] > 0:
+                first_in = day_result["first_in"].strftime("%H:%M") if day_result["first_in"] else ""
+                last_out = day_result["last_out"].strftime("%H:%M") if day_result["last_out"] else ""
+                worked = format_minutes(day_result["worked_minutes"])
+                
+                # "08:00-17:30 (9h)" formatda
+                row[f"date_{d['key']}"] = f"{first_in}-{last_out}"
+                total_worked += day_result["worked_minutes"]
+            else:
+                row[f"date_{d['key']}"] = "—"
+        
+        row["total_hours"] = format_minutes(total_worked) if total_worked > 0 else "—"
+        data.append(row)
+    
+    return columns, data
 
 
 def get_columns():

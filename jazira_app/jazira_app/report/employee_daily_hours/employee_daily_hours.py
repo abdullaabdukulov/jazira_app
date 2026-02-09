@@ -20,13 +20,81 @@ def execute(filters=None):
     if not filters:
         filters = {}
     
-    if not filters.get("employee"):
-        frappe.throw(_("Xodimni tanlang"))
     if not filters.get("date"):
         frappe.throw(_("Sanani tanlang"))
     
+    # Agar xodim tanlanmagan bo'lsa - barcha xodimlar jadvali
+    if not filters.get("employee"):
+        return get_all_employees_report(filters)
+    
+    # Xodim tanlangan - batafsil hisobot
     columns = get_columns()
     data = get_data(filters)
+    
+    return columns, data
+
+
+def get_all_employees_report(filters):
+    """Barcha xodimlar uchun kunlik hisobot - sodda jadval"""
+    selected_date = getdate(filters.get("date"))
+    company = filters.get("company")
+    
+    # Xodimlarni olish
+    emp_filters = {"status": "Active"}
+    if company:
+        emp_filters["company"] = company
+    
+    employees = frappe.get_all(
+        "Employee",
+        filters=emp_filters,
+        fields=["name", "employee_name", "designation", "company"],
+        order_by="employee_name"
+    )
+    
+    if not employees:
+        return [], []
+    
+    columns = [
+        {"label": _("TR"), "fieldname": "idx", "fieldtype": "Int", "width": 40},
+        {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 180},
+        {"label": _("Lavozim"), "fieldname": "designation", "fieldtype": "Data", "width": 130},
+        {"label": _("Keldi"), "fieldname": "first_in", "fieldtype": "Data", "width": 70},
+        {"label": _("Ketdi"), "fieldname": "last_out", "fieldtype": "Data", "width": 70},
+        {"label": _("Ishladi"), "fieldname": "worked", "fieldtype": "Data", "width": 70},
+        {"label": _("Holat"), "fieldname": "status", "fieldtype": "Data", "width": 120},
+    ]
+    
+    data = []
+    
+    for idx, emp in enumerate(employees, 1):
+        logs = get_employee_logs(emp.name, selected_date)
+        
+        if logs:
+            result = calculate_work_time(logs, selected_date)
+            first_in_str = result["first_in"].strftime("%H:%M") if result["first_in"] else "—"
+            
+            if result["last_out"]:
+                last_out_str = result["last_out"].strftime("%H:%M")
+            else:
+                last_out_str = "—"
+            
+            worked_str = format_minutes(result["worked_minutes"]) if result["worked_minutes"] > 0 else "—"
+            status = get_status_text(result["status"])
+        else:
+            first_in_str = "—"
+            last_out_str = "—"
+            worked_str = "—"
+            status = "Log yo'q"
+        
+        data.append({
+            "idx": idx,
+            "employee_name": emp.employee_name,
+            "designation": emp.designation or "—",
+            "first_in": first_in_str,
+            "last_out": last_out_str,
+            "worked": worked_str,
+            "status": status,
+        })
     
     return columns, data
 
