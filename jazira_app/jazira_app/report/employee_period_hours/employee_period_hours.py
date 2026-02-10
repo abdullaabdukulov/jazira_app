@@ -66,7 +66,6 @@ def get_all_employees_report(filters):
     
     # Ustunlarni yaratish
     columns = [
-        {"label": _("#"), "fieldname": "idx", "fieldtype": "Data", "width": 30},
         {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 160},
     ]
     
@@ -82,13 +81,13 @@ def get_all_employees_report(filters):
             "label": date_str,
             "fieldname": f"d_{date_key}",
             "fieldtype": "Data",
-            "width": 70,
+            "width": 110,
         })
         
         current_date = add_days(current_date, 1)
     
     # Jami ustuni
-    columns.append({"label": _("Jami"), "fieldname": "total_hours", "fieldtype": "Data", "width": 55})
+    columns.append({"label": _("Jami"), "fieldname": "total_hours", "fieldtype": "Data", "width": 80})
     
     # Barcha loglarni olish
     search_start = datetime.combine(add_days(from_date, -1), dt_time(12, 0, 0))
@@ -114,7 +113,6 @@ def get_all_employees_report(filters):
         emp_logs = logs_by_employee.get(emp.name, [])
         
         row = {
-            "idx": str(idx),
             "employee_name": emp.employee_name,
         }
         
@@ -128,10 +126,8 @@ def get_all_employees_report(filters):
                 first_in = day_result["first_in"].strftime("%H:%M") if day_result["first_in"] else ""
                 last_out = day_result["last_out"].strftime("%H:%M") if day_result["last_out"] else ""
                 
-                # Qisqa format: "8-17"
-                in_h = first_in[:2].lstrip("0") or "0"
-                out_h = last_out[:2].lstrip("0") or "0"
-                row[f"d_{d['key']}"] = f"{in_h}-{out_h}"
+                # To'liq format: "08:30-17:45"
+                row[f"d_{d['key']}"] = f"{first_in}-{last_out}"
                 total_worked += day_result["worked_minutes"]
             else:
                 row[f"d_{d['key']}"] = "—"
