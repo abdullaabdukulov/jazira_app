@@ -1,13 +1,12 @@
+// Employee DocType uchun Manager-friendly forma
+// Fayl: jazira_app/public/js/employee.js
+
 frappe.ui.form.on('Employee', {
     refresh: function(frm) {
         simplify_for_manager(frm);
     },
     
     onload: function(frm) {
-        simplify_for_manager(frm);
-    },
-    
-    after_save: function(frm) {
         simplify_for_manager(frm);
     }
 });
@@ -23,72 +22,109 @@ function simplify_for_manager(frm) {
     // KERAKLI FIELDLAR
     // ═══════════════════════════════════════════════════════════════
     const required_fields = [
-        // Shaxsiy
-        'naming_series', 'first_name', 'middle_name', 'last_name',
-        'employee_name', 'gender', 'date_of_birth', 'date_of_joining', 
-        'status', 'image',
+        // Asosiy
+        'naming_series', 
+        'first_name', 
+        'middle_name', 
+        'last_name',
+        'employee_name',
+        'gender', 
+        'date_of_birth', 
+        'date_of_joining', 
+        'status', 
+        'image',
         
         // Kompaniya
-        'company', 'designation',
+        'company', 
+        'designation',
         
-        // Davomat
-        'attendance_device_id', 'default_shift',
+        // Davomat - muhim!
+        'attendance_device_id', 
+        'default_shift',
         
-        // Maosh
+        // Maosh - muhim!
+        'ctc',
         'hourly_rate',
         
         // Aloqa
-        'cell_number', 'personal_email'
+        'cell_number', 
+        'personal_email',
+        'company_email'
     ];
     
     // ═══════════════════════════════════════════════════════════════
-    // BARCHA FIELDLARNI YASHIRISH (keraklilaridan tashqari)
+    // YASHIRISH va KO'RSATISH
     // ═══════════════════════════════════════════════════════════════
+    
     frm.meta.fields.forEach(function(field) {
-        if (field.fieldname && field.fieldtype !== 'Section Break' && field.fieldtype !== 'Column Break') {
-            if (!required_fields.includes(field.fieldname)) {
-                frm.set_df_property(field.fieldname, 'hidden', 1);
+        const fn = field.fieldname;
+        
+        // Section Break va Column Break - o'tkazib yuborish
+        if (field.fieldtype === 'Tab Break') {
+            // Faqat Overview tab ko'rinsin
+            if (fn !== 'overview_tab' && fn !== 'basic_info_tab') {
+                frm.set_df_property(fn, 'hidden', 1);
             }
+            return;
+        }
+        
+        if (field.fieldtype === 'Section Break' || field.fieldtype === 'Column Break') {
+            return;
+        }
+        
+        // Kerakli fieldlarni ko'rsatish, qolganlarini yashirish
+        if (required_fields.includes(fn)) {
+            frm.set_df_property(fn, 'hidden', 0);
+        } else if (fn) {
+            frm.set_df_property(fn, 'hidden', 1);
         }
     });
     
     // ═══════════════════════════════════════════════════════════════
-    // TABLARNI YASHIRISH
+    // QOLGAN TABLARNI YASHIRISH
     // ═══════════════════════════════════════════════════════════════
-    // Overview dan boshqa barcha tablarni yashirish
     setTimeout(function() {
-        // Tab containerini topish
-        const tabs = frm.page.wrapper.find('.form-tabs .nav-item');
-        const allowed_tabs = ['Overview', 'Asosiy']; // Faqat birinchi tab
-        
-        tabs.each(function() {
-            const tab_label = $(this).find('.nav-link').text().trim();
-            if (!allowed_tabs.includes(tab_label) && tab_label !== '') {
-                $(this).hide();
+        // Barcha tab linklar
+        frm.page.wrapper.find('.form-tabs .nav-link').each(function() {
+            const tab_text = $(this).text().trim();
+            // Faqat Overview qolsin
+            if (tab_text && tab_text !== 'Overview') {
+                $(this).parent().hide();
             }
         });
     }, 100);
     
     // ═══════════════════════════════════════════════════════════════
-    // SECTION BREAK'LARNI TARTIBGA SOLISH
+    // KERAKLI FIELDLARNI MAJBURIY KO'RSATISH (agar yashirilgan bo'lsa)
     // ═══════════════════════════════════════════════════════════════
     
-    // Ortiqcha section'larni yashirish
-    const sections_to_hide = [
-        'user_details_section',
-        'address_contacts_tab',
-        'attendance_and_leave_details',
-        'salary_details',
-        'personal_details',
-        'educational_qualification',
-        'previous_work_experience',
-        'exit',
-        'sb_health'
-    ];
+    // Attendance Device ID
+    if (frm.fields_dict['attendance_device_id']) {
+        $(frm.fields_dict['attendance_device_id'].wrapper).show();
+        frm.set_df_property('attendance_device_id', 'hidden', 0);
+    }
     
-    sections_to_hide.forEach(function(section) {
-        if (frm.fields_dict[section]) {
-            $(frm.fields_dict[section].wrapper).hide();
-        }
-    });
+    // Default Shift
+    if (frm.fields_dict['default_shift']) {
+        $(frm.fields_dict['default_shift'].wrapper).show();
+        frm.set_df_property('default_shift', 'hidden', 0);
+    }
+    
+    // Hourly Rate
+    if (frm.fields_dict['hourly_rate']) {
+        $(frm.fields_dict['hourly_rate'].wrapper).show();
+        frm.set_df_property('hourly_rate', 'hidden', 0);
+    }
+    
+    // Cell Number
+    if (frm.fields_dict['cell_number']) {
+        $(frm.fields_dict['cell_number'].wrapper).show();
+        frm.set_df_property('cell_number', 'hidden', 0);
+    }
+    
+    // Personal Email
+    if (frm.fields_dict['personal_email']) {
+        $(frm.fields_dict['personal_email'].wrapper).show();
+        frm.set_df_property('personal_email', 'hidden', 0);
+    }
 }
