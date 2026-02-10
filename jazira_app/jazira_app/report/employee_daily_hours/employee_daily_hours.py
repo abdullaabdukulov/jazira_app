@@ -55,13 +55,12 @@ def get_all_employees_report(filters):
         return [], []
     
     columns = [
-        {"label": _("#"), "fieldname": "idx", "fieldtype": "Data", "width": 30},
         {"label": _("F.I.O"), "fieldname": "employee_name", "fieldtype": "Data", "width": 180},
         {"label": _("Lavozim"), "fieldname": "designation", "fieldtype": "Data", "width": 130},
-        {"label": _("Keldi"), "fieldname": "first_in", "fieldtype": "Data", "width": 70},
-        {"label": _("Ketdi"), "fieldname": "last_out", "fieldtype": "Data", "width": 70},
-        {"label": _("Ishladi"), "fieldname": "worked", "fieldtype": "Data", "width": 70},
-        {"label": _("Holat"), "fieldname": "status", "fieldtype": "Data", "width": 120},
+        {"label": _("Keldi"), "fieldname": "first_in", "fieldtype": "Data", "width": 80},
+        {"label": _("Ketdi"), "fieldname": "last_out", "fieldtype": "Data", "width": 80},
+        {"label": _("Ishladi"), "fieldname": "worked", "fieldtype": "Data", "width": 80},
+        {"label": _("Holat"), "fieldname": "status", "fieldtype": "Data", "width": 130},
     ]
     
     data = []
@@ -87,7 +86,6 @@ def get_all_employees_report(filters):
             status = "Log yo'q"
         
         data.append({
-            "idx": str(idx),
             "employee_name": emp.employee_name,
             "designation": emp.designation or "—",
             "first_in": first_in_str,
