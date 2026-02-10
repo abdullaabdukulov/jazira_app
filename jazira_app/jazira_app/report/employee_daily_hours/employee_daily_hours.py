@@ -39,16 +39,29 @@ def get_all_employees_report(filters):
     selected_date = getdate(filters.get("date"))
     company = filters.get("company")
     
-    # Xodimlarni olish
+    # User permission tekshirish - filial manager faqat o'z filialini ko'radi
+    user = frappe.session.user
+    if user != "Administrator" and user != "admin_jazira@jazira.uz":
+        # User permission bo'yicha company olish
+        user_company = frappe.db.get_value(
+            "User Permission",
+            {"user": user, "allow": "Company"},
+            "for_value"
+        )
+        if user_company:
+            company = user_company
+    
+    # Xodimlarni olish (permission bilan)
     emp_filters = {"status": "Active"}
     if company:
         emp_filters["company"] = company
     
-    employees = frappe.get_all(
+    employees = frappe.get_list(
         "Employee",
         filters=emp_filters,
         fields=["name", "employee_name", "designation", "company"],
-        order_by="employee_name"
+        order_by="employee_name",
+        ignore_permissions=(user == "Administrator" or user == "admin_jazira@jazira.uz")
     )
     
     if not employees:
