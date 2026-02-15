@@ -73,6 +73,12 @@ fixtures = [
                 "checkin_reason"
             ]]
         ]
+    },
+    {
+        "dt": "Custom DocPerm",
+        "filters": [
+            ["parent", "=", "Employee"]
+        ]
     }
 ]
 
