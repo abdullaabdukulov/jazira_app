@@ -70,12 +70,13 @@ def get_preview_data(doc_name: str) -> Dict:
     
     try:
         # Read Excel
-        items = excel_service.read_sales_report(doc.excel_file)
-        
+        excel_data = excel_service.read_sales_report(doc.excel_file)
+        items = excel_data["items"]
+
         # Validate items
         validation = validate_items_exist(items)
         valid_items = validation["valid_items"]
-        
+
         # Categorize by BOM
         for item in items:
             if item.get("item_code"):
@@ -86,7 +87,7 @@ def get_preview_data(doc_name: str) -> Dict:
             else:
                 item["has_bom"] = False
                 item["type"] = "NOT FOUND"
-        
+
         # Calculate summary
         found_items = [i for i in items if i.get("found")]
         summary = {
@@ -98,8 +99,8 @@ def get_preview_data(doc_name: str) -> Dict:
             "total_qty": sum(i.get("qty", 0) for i in items),
             "total_amount": sum(i.get("qty", 0) * i.get("rate", 0) for i in items)
         }
-        
-        return {"success": True, "items": items, "summary": summary}
+
+        return {"success": True, "items": items, "summary": summary, "excel_posting_date": excel_data["posting_date"]}
         
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -128,8 +129,9 @@ def validate_excel_items(doc_name: str) -> Dict:
     
     try:
         # Read Excel
-        items = excel_service.read_sales_report(doc.excel_file)
-        
+        excel_data = excel_service.read_sales_report(doc.excel_file)
+        items = excel_data["items"]
+
         if not items:
             return {
                 "success": False,
@@ -250,7 +252,7 @@ def _process_import_sync(doc_name: str) -> Dict:
     log(f"IMPORT BOSHLANDI: {nowdate()}")
     log(f"Company: {doc.company}")
     log(f"Warehouse: {doc.source_warehouse}")
-    log(f"Date: {doc.posting_date}")
+    log(f"Doc Posting Date: {doc.posting_date}")
     log("=" * 50)
     
     try:
@@ -259,7 +261,7 @@ def _process_import_sync(doc_name: str) -> Dict:
         validation = validate_import_prerequisites(
             doc.company,
             doc.source_warehouse,
-            str(doc.posting_date)
+            str(doc.posting_date)  # initial validation with doc date
         )
         if not validation["success"]:
             raise Exception(validation["message"])
@@ -267,10 +269,20 @@ def _process_import_sync(doc_name: str) -> Dict:
         
         # 2. Read Excel
         log("\n📊 2. Excel o'qilmoqda...")
-        items = excel_service.read_sales_report(doc.excel_file)
+        excel_data = excel_service.read_sales_report(doc.excel_file)
+        items = excel_data["items"]
         if not items:
             raise Exception(_("Excel faylda sotuv topilmadi"))
         log(f"   ✅ {len(items)} ta qator o'qildi")
+
+        # Determine posting date: Excel date takes priority, fallback to doc.posting_date
+        excel_posting_date = excel_data.get("posting_date")
+        if excel_posting_date:
+            posting_date = excel_posting_date
+            log(f"   📅 Excel dan sana olindi: {posting_date}")
+        else:
+            posting_date = str(doc.posting_date)
+            log(f"   📅 Doctype dan sana olindi: {posting_date}")
         
         # 3. Check duplicate
         log("\n🔍 3. Dublikat tekshiruvi...")
@@ -307,7 +319,7 @@ def _process_import_sync(doc_name: str) -> Dict:
             config = StockEntryConfig(
                 company=doc.company,
                 warehouse=doc.source_warehouse,
-                posting_date=str(doc.posting_date),
+                posting_date=posting_date,
                 allow_negative_stock=bool(doc.allow_negative_stock)
             )
             se_names = stock_service.create_manufacture_entries(
@@ -326,7 +338,7 @@ def _process_import_sync(doc_name: str) -> Dict:
         invoice_config = InvoiceConfig(
             company=doc.company,
             warehouse=doc.source_warehouse,
-            posting_date=str(doc.posting_date),
+            posting_date=posting_date,
             customer=doc.customer or "Walk-in Customer"
         )
         si_name = invoice_service.create_sales_invoice(

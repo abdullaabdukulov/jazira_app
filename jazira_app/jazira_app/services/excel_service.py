@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 from dataclasses import dataclass
+from datetime import datetime, date
 
 import frappe
 from frappe import _
@@ -11,28 +12,30 @@ from jazira_app.jazira_app.utils.helpers import parse_numeric, get_file_path
 class ExcelColumn:
     """Excel column configuration."""
     field_name: str
-    headers: List[str]  # Possible header names (lowercase)
+    headers: List[str]
 
 
 class ExcelService:
     """
     Service for reading and parsing Excel files.
-    
-    Supports Russian POS report format with columns:
-    - Наименование (item name)
-    - Количество (quantity)
-    - Цена продажи (rate)
+
+    Supports Uzbek POS report format with columns:
+    - Nomi (mahsulot nomi)
+    - Soni (miqdori)
+    - Narxi (sotuv narxi)
+    - Sana (ixtiyoriy - savdo sanasi)
     """
-    
+
     # Column mapping configuration
     COLUMNS = [
-        ExcelColumn("item_name", ["наименование"]),
-        ExcelColumn("qty", ["количество", "количество, шт.", "количество, шт", "кол-во"]),
-        ExcelColumn("rate", ["цена продажи", "цена продажи, uzs. коп.", "цена продажи, uzs", "цена"]),
+        ExcelColumn("item_name", ["nomi", "mahsulot nomi", "mahsulot", "tovar nomi", "tovar", "наименование"]),
+        ExcelColumn("qty", ["soni", "miqdori", "miqdor", "количество", "количество, шт.", "кол-во"]),
+        ExcelColumn("rate", ["narxi", "sotuv narxi", "narx", "цена продажи", "цена"]),
+        ExcelColumn("datetime", ["sana", "savdo sanasi", "дата", "дата продажи", "datetime", "date"]),
     ]
-    
+
     # Rows to skip (summary rows)
-    SKIP_KEYWORDS = ["итого", "всего", "total", "сумма", "jami"]
+    SKIP_KEYWORDS = ["jami", "итого", "всего", "total", "сумма", "umumiy"]
     
     def __init__(self):
         self._ensure_openpyxl()
@@ -44,41 +47,49 @@ class ExcelService:
         except ImportError:
             frappe.throw(_("openpyxl not installed. Run: pip install openpyxl"))
     
-    def read_sales_report(self, file_url: str) -> List[Dict]:
+    def read_sales_report(self, file_url: str) -> Dict:
         """
         Read POS sales report from Excel file.
-        
+
         Args:
             file_url: Frappe file URL
-            
+
         Returns:
-            List of dicts with keys: item_name, qty, rate, row_num
-            
+            Dict with keys:
+                - items: List of dicts with keys: item_name, qty, rate, row_num
+                - posting_date: str (YYYY-MM-DD) if datetime column found, else None
+
         Raises:
             frappe.ValidationError: If file cannot be read or required columns missing
         """
         from openpyxl import load_workbook
-        
+
         file_path = get_file_path(file_url)
         if not file_path:
             frappe.throw(_("Excel fayl topilmadi: {0}").format(file_url))
-        
+
         wb = load_workbook(file_path, data_only=True)
         ws = wb.active
-        
+
         try:
             # Find header row and column indices
             column_indices = self._find_columns(ws)
             header_row = column_indices.get("_header_row", 1)
-            
+
             # Validate required columns
             self._validate_required_columns(column_indices)
-            
+
             # Read data rows
             items = self._read_data_rows(ws, column_indices, header_row)
-            
-            return items
-            
+
+            # Extract posting date from datetime column
+            excel_date = self._extract_posting_date(ws, column_indices, header_row)
+
+            return {
+                "items": items,
+                "posting_date": excel_date
+            }
+
         finally:
             wb.close()
     
@@ -115,10 +126,10 @@ class ExcelService:
     def _validate_required_columns(self, column_indices: Dict):
         """Validate that required columns are found."""
         if "item_name" not in column_indices:
-            frappe.throw(_("Excel faylida 'Наименование' ustuni topilmadi"))
-        
+            frappe.throw(_("Excel faylida 'Nomi' ustuni topilmadi"))
+
         if "qty" not in column_indices:
-            frappe.throw(_("Excel faylida 'Количество' ustuni topilmadi"))
+            frappe.throw(_("Excel faylida 'Soni' ustuni topilmadi"))
     
     def _read_data_rows(
         self,
@@ -165,6 +176,52 @@ class ExcelService:
         
         return items
     
+    def _extract_posting_date(
+        self,
+        worksheet,
+        column_indices: Dict[str, int],
+        header_row: int
+    ) -> Optional[str]:
+        """
+        Extract posting date from datetime column.
+
+        Reads the first data row's datetime value and returns as YYYY-MM-DD string.
+        Returns None if no datetime column found.
+        """
+        if "datetime" not in column_indices:
+            return None
+
+        dt_col = column_indices["datetime"] - 1
+
+        for row in worksheet.iter_rows(min_row=header_row + 1):
+            if dt_col < 0 or dt_col >= len(row):
+                return None
+
+            cell_value = row[dt_col].value
+            if cell_value is None:
+                continue
+
+            # Handle datetime/date objects from Excel
+            if isinstance(cell_value, datetime):
+                return cell_value.strftime("%Y-%m-%d")
+            if isinstance(cell_value, date):
+                return cell_value.strftime("%Y-%m-%d")
+
+            # Handle string dates
+            cell_str = str(cell_value).strip()
+            if not cell_str:
+                continue
+
+            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S"):
+                try:
+                    return datetime.strptime(cell_str, fmt).strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+
+            return None
+
+        return None
+
     def _get_cell_value(self, row, col_index: int) -> Optional[str]:
         """Safely get cell value."""
         if col_index < 0 or col_index >= len(row):
@@ -182,5 +239,4 @@ class ExcelService:
         return any(kw in item_lower for kw in self.SKIP_KEYWORDS)
 
 
-# Singleton instance for convenience
 excel_service = ExcelService()
