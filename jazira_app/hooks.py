@@ -30,12 +30,6 @@ app_license = "mit"
 # =============================================================================
 fixtures = [
     {
-        "dt": "DocType",
-        "filters": [
-            ["name", "in", ["Jazira App Daily Sales Import"]]
-        ]
-    },
-    {
         "dt": "Custom Field",
         "filters": [
             ["dt", "in", [
