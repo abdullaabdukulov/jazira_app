@@ -187,6 +187,11 @@ def setup_ury_room(branch_name):
 
 
 def setup_ury_restaurant(branch_name, company, prefix, room_name, tax_tpl):
+    # Tax template mavjudligini tekshirish
+    if tax_tpl and not frappe.db.exists("Sales Taxes and Charges Template", tax_tpl):
+        log(f"  [WARN] Tax template topilmadi: {tax_tpl} — bo'sh qoldirildi")
+        tax_tpl = ""
+
     existing = frappe.get_all("URY Restaurant", filters={"branch": branch_name}, limit=1)
     if existing:
         doc = frappe.get_doc("URY Restaurant", existing[0].name)
@@ -230,6 +235,13 @@ def setup_pos_profile(cfg, restaurant_name):
     company = cfg["company"]
     write_off = find_account(company, account_type="Expense Account") or find_account(company, root_type="Expense")
     income = find_account(company, root_type="Income")
+
+    # Tax template mavjudligini tekshirish
+    tax_tpl = cfg["tax_template"]
+    if tax_tpl and not frappe.db.exists("Sales Taxes and Charges Template", tax_tpl):
+        log(f"  [WARN] Tax template topilmadi: {tax_tpl} — bo'sh qoldirildi")
+        tax_tpl = ""
+    cfg = {**cfg, "tax_template": tax_tpl}
 
     if frappe.db.exists("POS Profile", pos_name):
         doc = frappe.get_doc("POS Profile", pos_name)
