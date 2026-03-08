@@ -254,6 +254,11 @@ def setup_pos_profile(cfg, restaurant_name):
     mop = _check_link("Mode of Payment", cfg["mode_of_payment"], "Mode of Payment")
     tax_tpl = _check_link("Sales Taxes and Charges Template", cfg["tax_template"], "Tax Template")
 
+    # POS Profile payments mandatory — MOP yo'q bo'lsa yaratib bo'lmaydi
+    if not mop and not frappe.db.exists("POS Profile", pos_name):
+        log(f"  [SKIP] POS Profile: {pos_name} — Mode of Payment topilmadi, yaratilmadi")
+        return None
+
     if frappe.db.exists("POS Profile", pos_name):
         doc = frappe.get_doc("POS Profile", pos_name)
         doc.company = company
