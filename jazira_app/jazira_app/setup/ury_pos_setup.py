@@ -348,16 +348,24 @@ def setup_ury_menu(branch_name, rest_doc, menu_items):
         rest_doc.save(ignore_permissions=True)
         log("  [UPD] Restaurant active_menu => " + menu_doc.name)
 
-    # Item'larni qo'shish
+    # Item'larni qo'shish (faqat mavjud item'lar)
     existing_items = [r.item for r in menu_doc.items]
     added = 0
+    skipped = 0
     for item in menu_items:
-        if item["item_code"] not in existing_items:
-            menu_doc.append("items", {"item": item["item_code"], "rate": item["rate"]})
-            added += 1
+        if item["item_code"] in existing_items:
+            continue
+        if not frappe.db.exists("Item", item["item_code"]):
+            log(f"  [WARN] Item topilmadi: {item['item_code']} — o'tkazib yuborildi")
+            skipped += 1
+            continue
+        menu_doc.append("items", {"item": item["item_code"], "rate": item["rate"]})
+        added += 1
     if added > 0:
         menu_doc.save(ignore_permissions=True)
         log("  [UPD] URY Menu: " + str(added) + " ta item qo'shildi")
+    if skipped > 0:
+        log(f"  [WARN] {skipped} ta item topilmadi — o'tkazib yuborildi")
 
     return menu_doc.name
 
