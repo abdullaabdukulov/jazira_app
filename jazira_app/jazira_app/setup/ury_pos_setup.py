@@ -230,39 +230,54 @@ def _ensure_billing_role(pos_doc, role):
         pos_doc.append("role_allowed_for_billing", {"role": role})
 
 
+def _check_link(doctype, name, label=""):
+    """Link field mavjudligini tekshirish. Yo'q bo'lsa log yozib None qaytaradi."""
+    if not name:
+        return ""
+    if frappe.db.exists(doctype, name):
+        return name
+    log(f"  [WARN] {label or doctype} topilmadi: {name} — bo'sh qoldirildi")
+    return ""
+
+
 def setup_pos_profile(cfg, restaurant_name):
     pos_name = "URY POS - " + cfg["branch_name"]
     company = cfg["company"]
     write_off = find_account(company, account_type="Expense Account") or find_account(company, root_type="Expense")
     income = find_account(company, root_type="Income")
 
-    # Tax template mavjudligini tekshirish
-    tax_tpl = cfg["tax_template"]
-    if tax_tpl and not frappe.db.exists("Sales Taxes and Charges Template", tax_tpl):
-        log(f"  [WARN] Tax template topilmadi: {tax_tpl} — bo'sh qoldirildi")
-        tax_tpl = ""
-    cfg = {**cfg, "tax_template": tax_tpl}
+    # Barcha link field'larni tekshirish
+    warehouse = _check_link("Warehouse", cfg["warehouse"], "Warehouse")
+    customer = _check_link("Customer", cfg["customer"], "Customer")
+    price_list = _check_link("Price List", cfg["price_list"], "Price List")
+    cost_center = _check_link("Cost Center", cfg["cost_center"], "Cost Center")
+    mop = _check_link("Mode of Payment", cfg["mode_of_payment"], "Mode of Payment")
+    tax_tpl = _check_link("Sales Taxes and Charges Template", cfg["tax_template"], "Tax Template")
 
     if frappe.db.exists("POS Profile", pos_name):
         doc = frappe.get_doc("POS Profile", pos_name)
         doc.company = company
-        doc.warehouse = cfg["warehouse"]
+        if warehouse:
+            doc.warehouse = warehouse
         doc.currency = "UZS"
-        doc.selling_price_list = cfg["price_list"]
-        doc.cost_center = cfg["cost_center"]
+        if price_list:
+            doc.selling_price_list = price_list
+        if cost_center:
+            doc.cost_center = cost_center
+            doc.write_off_cost_center = cost_center
         doc.restaurant = restaurant_name
         doc.branch = cfg["branch_name"]
-        doc.customer = cfg["customer"]
+        if customer:
+            doc.customer = customer
         doc.disabled = 0
         if write_off:
             doc.write_off_account = write_off
-        doc.write_off_cost_center = cfg["cost_center"]
         if income:
             doc.income_account = income
-        if cfg["tax_template"]:
-            doc.taxes_and_charges = cfg["tax_template"]
-        if not doc.payments:
-            doc.append("payments", {"mode_of_payment": cfg["mode_of_payment"], "default": 1})
+        if tax_tpl:
+            doc.taxes_and_charges = tax_tpl
+        if not doc.payments and mop:
+            doc.append("payments", {"mode_of_payment": mop, "default": 1})
         doc.custom_kot_naming_series = "KOT-.YYYY.-.####"
         doc.custom_enable_multiple_cashier = 1
         _ensure_billing_role(doc, "URY Cashier")
@@ -274,26 +289,31 @@ def setup_pos_profile(cfg, restaurant_name):
         "doctype": "POS Profile",
         "__newname": pos_name,
         "company": company,
-        "warehouse": cfg["warehouse"],
         "currency": "UZS",
-        "selling_price_list": cfg["price_list"],
-        "cost_center": cfg["cost_center"],
-        "write_off_cost_center": cfg["cost_center"],
-        "customer": cfg["customer"],
         "restaurant": restaurant_name,
         "branch": cfg["branch_name"],
         "disabled": 0,
         "custom_kot_naming_series": "KOT-.YYYY.-.####",
         "custom_enable_multiple_cashier": 1,
-        "payments": [{"mode_of_payment": cfg["mode_of_payment"], "default": 1}],
         "role_allowed_for_billing": [{"role": "URY Cashier"}],
     }
+    if warehouse:
+        vals["warehouse"] = warehouse
+    if price_list:
+        vals["selling_price_list"] = price_list
+    if cost_center:
+        vals["cost_center"] = cost_center
+        vals["write_off_cost_center"] = cost_center
+    if customer:
+        vals["customer"] = customer
     if write_off:
         vals["write_off_account"] = write_off
     if income:
         vals["income_account"] = income
-    if cfg["tax_template"]:
-        vals["taxes_and_charges"] = cfg["tax_template"]
+    if tax_tpl:
+        vals["taxes_and_charges"] = tax_tpl
+    if mop:
+        vals["payments"] = [{"mode_of_payment": mop, "default": 1}]
     doc = frappe.get_doc(vals)
     doc.insert(ignore_permissions=True)
     log("  [NEW] POS Profile: " + pos_name)
@@ -422,11 +442,22 @@ def execute():
     log("URY POS BRANCH SETUP")
     log("=" * 60)
 
+    active_branches = []
+
     for cfg in BRANCHES:
         br = cfg["branch_name"]
+        company = cfg["company"]
+
         log("\n" + "=" * 50)
-        log("FILIAL: " + br + " (" + cfg["company"] + ")")
+        log("FILIAL: " + br + " (" + company + ")")
         log("=" * 50)
+
+        # Company mavjudligini tekshirish — yo'q bo'lsa butun filial SKIP
+        if not frappe.db.exists("Company", company):
+            log(f"  [SKIP] Company topilmadi: {company} — bu filial o'tkazib yuborildi")
+            continue
+
+        active_branches.append(br)
 
         # 1. Branch
         log("\n  --- Branch ---")
@@ -463,12 +494,15 @@ def execute():
         log("\n  --- URY Table (Tickets) ---")
         setup_tickets(br, rest_doc.name, room_name, cfg["ticket_count"])
 
-    # Production Units (barcha filiallar bo'lgandan keyin)
+    # Production Units (faqat aktiv filiallar uchun)
     log("\n" + "=" * 50)
     log("PRODUCTION UNITS")
     log("=" * 50)
     for pu_cfg in PRODUCTION_UNITS:
         br = pu_cfg["branch"]
+        if br not in active_branches:
+            log(f"\n  [{br}] SKIP — filial o'rnatilmagan")
+            continue
         pos_profile = "URY POS - " + br
         log("\n  [" + br + "]")
         for unit in pu_cfg["units"]:
