@@ -470,42 +470,47 @@ def execute():
             log(f"  [SKIP] Company topilmadi: {company} — bu filial o'tkazib yuborildi")
             continue
 
-        active_branches.append(br)
+        try:
+            active_branches.append(br)
 
-        # 1. Branch
-        log("\n  --- Branch ---")
-        setup_branch(br)
+            # 1. Branch
+            log("\n  --- Branch ---")
+            setup_branch(br)
 
-        # 2. Mode of Payment account
-        log("\n  --- Mode of Payment ---")
-        setup_mop_account(cfg["mode_of_payment"], cfg["company"], cfg["mop_account"])
+            # 2. Mode of Payment account
+            log("\n  --- Mode of Payment ---")
+            setup_mop_account(cfg["mode_of_payment"], cfg["company"], cfg["mop_account"])
 
-        # 3. URY Room
-        log("\n  --- URY Room ---")
-        room_name = setup_ury_room(br)
+            # 3. URY Room
+            log("\n  --- URY Room ---")
+            room_name = setup_ury_room(br)
 
-        # 4. URY Restaurant
-        log("\n  --- URY Restaurant ---")
-        rest_doc = setup_ury_restaurant(
-            br, cfg["company"], cfg["invoice_prefix"],
-            room_name, cfg["tax_template"]
-        )
+            # 4. URY Restaurant
+            log("\n  --- URY Restaurant ---")
+            rest_doc = setup_ury_restaurant(
+                br, cfg["company"], cfg["invoice_prefix"],
+                room_name, cfg["tax_template"]
+            )
 
-        # 5. POS Profile
-        log("\n  --- POS Profile ---")
-        setup_pos_profile(cfg, rest_doc.name)
+            # 5. POS Profile
+            log("\n  --- POS Profile ---")
+            setup_pos_profile(cfg, rest_doc.name)
 
-        # 6. URY Menu + items
-        log("\n  --- URY Menu ---")
-        setup_ury_menu(br, rest_doc, MENU_ITEMS)
+            # 6. URY Menu + items
+            log("\n  --- URY Menu ---")
+            setup_ury_menu(br, rest_doc, MENU_ITEMS)
 
-        # 7. URY Report Settings
-        log("\n  --- URY Report Settings ---")
-        setup_ury_report_settings(br, cfg["buying_price_list"])
+            # 7. URY Report Settings
+            log("\n  --- URY Report Settings ---")
+            setup_ury_report_settings(br, cfg["buying_price_list"])
 
-        # 8. Ticket raqamlar
-        log("\n  --- URY Table (Tickets) ---")
-        setup_tickets(br, rest_doc.name, room_name, cfg["ticket_count"])
+            # 8. Ticket raqamlar
+            log("\n  --- URY Table (Tickets) ---")
+            setup_tickets(br, rest_doc.name, room_name, cfg["ticket_count"])
+
+        except Exception as e:
+            log(f"\n  [ERROR] Filial {br} sozlashda xato: {str(e)}")
+            log(f"  [WARN] Bu filial o'tkazib yuborildi, davom etilmoqda...")
 
     # Production Units (faqat aktiv filiallar uchun)
     log("\n" + "=" * 50)
@@ -519,12 +524,15 @@ def execute():
         pos_profile = "URY POS - " + br
         log("\n  [" + br + "]")
         for unit in pu_cfg["units"]:
-            printer = setup_network_printer(
-                unit["printer_name"], unit["printer_ip"], unit["printer_port"]
-            )
-            setup_production_unit(
-                unit["name"], pos_profile, unit["item_groups"], printer
-            )
+            try:
+                printer = setup_network_printer(
+                    unit["printer_name"], unit["printer_ip"], unit["printer_port"]
+                )
+                setup_production_unit(
+                    unit["name"], pos_profile, unit["item_groups"], printer
+                )
+            except Exception as e:
+                log(f"  [ERROR] Production Unit {unit['name']}: {str(e)}")
 
     frappe.db.commit()
     log("\n" + "=" * 60)
