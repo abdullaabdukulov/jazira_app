@@ -57,7 +57,7 @@ MANAGERS = [
         "is_admin": False,
         "password": "Jazira@2024!"
     },
-]
+]   
 
 # Manager rolining nomi
 MANAGER_ROLE = "Filial Manager"
