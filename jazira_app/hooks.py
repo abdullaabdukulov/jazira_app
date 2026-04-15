@@ -89,7 +89,11 @@ doc_events = {
         # To'lov qilinganda (submit) URY Table occupied flagini tozalash
         # Counter-service model: stiker raqamlari qayta ishlatilishi uchun
         "on_submit": "jazira_app.jazira_app.overrides.pos_invoice.on_submit",
-    }
+    },
+    "Sales Order": {
+        # Inter-company SO submit bo'lganda Sales Invoice + Purchase Invoice avtomatik yaratish
+        "on_submit": "jazira_app.jazira_app.overrides.sales_order.on_submit",
+    },
 }
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
