@@ -92,7 +92,7 @@ doc_events = {
     },
     "Sales Order": {
         # Inter-company SO submit bo'lganda Sales Invoice + Purchase Invoice avtomatik yaratish
-        "on_submit": "jazira_app.jazira_app.overrides.sales_order.on_submit",
+        "on_submit": "jazira_app.overrides.sales_order.on_submit",
     },
 }
 # Each item in the list will be shown as an app in the apps page
