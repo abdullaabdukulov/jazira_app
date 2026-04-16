@@ -33,6 +33,8 @@ def on_validate(doc, method=None):
 		item.rate = round(original_rate * multiplier, 2)
 		item.amount = round(item.rate * item.qty, 2)
 
+	doc.run_method("calculate_taxes_and_totals")
+
 
 def on_submit(doc, method=None):
 	"""
