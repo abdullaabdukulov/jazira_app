@@ -93,6 +93,8 @@ doc_events = {
     "Sales Order": {
         # Inter-company SO submit bo'lganda Sales Invoice + Purchase Invoice avtomatik yaratish
         "on_submit": "jazira_app.overrides.sales_order.on_submit",
+        # Draft holatda ham ustama foizni ko'rsatish
+        "validate": "jazira_app.overrides.sales_order.on_validate",
     },
 }
 # Each item in the list will be shown as an app in the apps page
