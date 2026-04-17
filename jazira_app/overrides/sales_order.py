@@ -70,6 +70,11 @@ def _create_sales_invoice(so_doc):
 	si.flags.ignore_permissions = True
 	si.flags.ignore_mandatory = True
 	si.order_type = None
+	si.update_stock = 1
+
+	# Sklad omboridan chiqim — SO dagi set_warehouse ishlatiladi
+	if so_doc.set_warehouse:
+		si.set_warehouse = so_doc.set_warehouse
 
 	_apply_markup(si)
 
@@ -109,6 +114,15 @@ def _create_purchase_invoice(si_doc):
 
 	pi = make_inter_company_purchase_invoice(si_doc.name)
 	pi.flags.ignore_permissions = True
+	pi.update_stock = 1
+
+	# Branch omboriga kirim — PO dagi set_warehouse (target warehouse) ishlatiladi
+	po_name = frappe.db.get_value("Sales Order", si_doc.sales_order, "inter_company_order_reference") if si_doc.get("sales_order") else None
+	if po_name:
+		po_warehouse = frappe.db.get_value("Purchase Order", po_name, "set_warehouse")
+		if po_warehouse:
+			pi.set_warehouse = po_warehouse
+
 	pi.insert(ignore_permissions=True)
 	pi.submit()
 	frappe.db.commit()
