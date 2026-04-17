@@ -94,6 +94,11 @@ doc_events = {
         # Inter-company SO submit bo'lganda Sales Invoice + Purchase Invoice avtomatik yaratish
         "on_submit": "jazira_app.overrides.sales_order.on_submit",
     },
+    "Sales Invoice": {
+        # Amended inter-company SI: yangi narx hisoblash va PI amend qilish
+        "validate": "jazira_app.overrides.sales_invoice.on_validate",
+        "on_submit": "jazira_app.overrides.sales_invoice.on_submit",
+    },
 }
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [

@@ -46,8 +46,12 @@ def on_submit(doc, method=None):
 		return
 
 	try:
+		# PO dan branch warehouse ni olish
+		po_warehouse = frappe.db.get_value(
+			"Purchase Order", doc.inter_company_order_reference, "set_warehouse"
+		)
 		si = _create_sales_invoice(doc)
-		pi = _create_purchase_invoice(si)
+		pi = _create_purchase_invoice(si, po_warehouse)
 
 		frappe.msgprint(
 			f"Sales Invoice <b>{si.name}</b> va Purchase Invoice <b>{pi.name}</b> avtomatik yaratildi",
@@ -107,7 +111,7 @@ def _apply_markup(si):
 	si.run_method("calculate_taxes_and_totals")
 
 
-def _create_purchase_invoice(si_doc):
+def _create_purchase_invoice(si_doc, branch_warehouse=None):
 	from erpnext.accounts.doctype.sales_invoice.sales_invoice import (
 		make_inter_company_purchase_invoice,
 	)
@@ -116,12 +120,11 @@ def _create_purchase_invoice(si_doc):
 	pi.flags.ignore_permissions = True
 	pi.update_stock = 1
 
-	# Branch omboriga kirim — PO dagi set_warehouse (target warehouse) ishlatiladi
-	po_name = frappe.db.get_value("Sales Order", si_doc.sales_order, "inter_company_order_reference") if si_doc.get("sales_order") else None
-	if po_name:
-		po_warehouse = frappe.db.get_value("Purchase Order", po_name, "set_warehouse")
-		if po_warehouse:
-			pi.set_warehouse = po_warehouse
+	# Branch omboriga kirim — PO dan kelgan warehouse
+	if branch_warehouse:
+		pi.set_warehouse = branch_warehouse
+		for item in pi.items:
+			item.warehouse = branch_warehouse
 
 	pi.insert(ignore_permissions=True)
 	pi.submit()
