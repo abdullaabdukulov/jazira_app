@@ -12,31 +12,36 @@ class ValidationError(Exception):
 def validate_import_prerequisites(
     company: str,
     source_warehouse: str,
-    posting_date: str
+    posting_date: str,
+    customer: str = ""
 ) -> Dict:
     """
     Validate all prerequisites before import.
-    
+
     Args:
         company: Company name
         source_warehouse: Warehouse name
         posting_date: Posting date string
-        
+        customer: Customer name
+
     Returns:
         dict: {success: bool, message: str, errors: list}
     """
     errors = []
-    
+
     # Required fields
     if not company:
         errors.append(_("Company tanlanmagan"))
-    
+
     if not source_warehouse:
         errors.append(_("Ombor tanlanmagan"))
-    
+
     if not posting_date:
         errors.append(_("Sana tanlanmagan"))
-    
+
+    if not customer:
+        errors.append(_("Mijoz tanlanmagan"))
+
     # Warehouse belongs to company
     if company and source_warehouse:
         wh_company = frappe.db.get_value("Warehouse", source_warehouse, "company")
@@ -46,11 +51,11 @@ def validate_import_prerequisites(
                     source_warehouse, company
                 )
             )
-    
-    # Walk-in Customer exists
-    if not frappe.db.exists("Customer", "Walk-in Customer"):
-        errors.append(_("'Walk-in Customer' nomli mijoz topilmadi"))
-    
+
+    # Customer exists
+    if customer and not frappe.db.exists("Customer", customer):
+        errors.append(_("'{0}' nomli mijoz topilmadi").format(customer))
+
     return {
         "success": len(errors) == 0,
         "message": "\n".join(errors) if errors else _("Tekshiruvlar muvaffaqiyatli"),

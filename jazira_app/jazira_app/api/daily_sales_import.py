@@ -261,7 +261,8 @@ def _process_import_sync(doc_name: str) -> Dict:
         validation = validate_import_prerequisites(
             doc.company,
             doc.source_warehouse,
-            str(doc.posting_date)  # initial validation with doc date
+            str(doc.posting_date),
+            doc.customer or ""
         )
         if not validation["success"]:
             raise Exception(validation["message"])
