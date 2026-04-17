@@ -114,6 +114,15 @@ def _create_purchase_invoice(si_doc, branch_warehouse=None):
                 f"Purchase Order da 'Set Warehouse' ni belgilang."
             )
 
+    # update_stock=1 da expense_account inventory account bo'lishi kerak
+    # Aks holda ERPNext "Expense Head Changed" warning beradi
+    inventory_account = frappe.db.get_value(
+        "Company", pi.company, "default_inventory_account"
+    )
+    if inventory_account:
+        for item in pi.items:
+            item.expense_account = inventory_account
+
     pi.insert(ignore_permissions=True)
     pi.run_method("calculate_taxes_and_totals")
     pi.submit()
