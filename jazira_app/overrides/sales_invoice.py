@@ -59,13 +59,13 @@ def _recalculate_rates(doc):
 	if not markup_percent:
 		return
 
-	# Sklad Settings dan main_warehouse
+	# Sklad Settings dan main_warehouse (amend uchun valuation_rate bazasi)
 	names = frappe.get_all("Sklad Settings", limit=1, pluck="name")
 	if not names:
-		return
+		frappe.throw("Sklad Settings topilmadi — SI amend narxlarini hisoblash mumkin emas.")
 	main_warehouse = frappe.db.get_value("Sklad Settings", names[0], "main_warehouse")
 	if not main_warehouse:
-		return
+		frappe.throw("Sklad Settings da 'Main Warehouse' belgilanmagan — SI amend uchun kerak.")
 
 	multiplier = 1 + (markup_percent / 100)
 	for item in doc.items:
@@ -87,8 +87,9 @@ def _recalculate_rates(doc):
 
 def _amend_and_submit_purchase_invoice(si_doc):
 	"""Asl PI ni topib, amend qilib, yangi SI narxlari bilan submit qiladi."""
-	# Asl SI dan linked PI ni topish
 	original_si_name = si_doc.amended_from
+
+	# Avval cancelled (docstatus=2) PI ni qidiramiz — to'g'ri holat
 	original_pi_name = frappe.db.get_value(
 		"Purchase Invoice",
 		{"inter_company_invoice_reference": original_si_name, "docstatus": 2},
@@ -96,18 +97,13 @@ def _amend_and_submit_purchase_invoice(si_doc):
 	)
 
 	if not original_pi_name:
-		# Cancelled PI ni qidiramiz
-		original_pi_name = frappe.db.get_value(
-			"Purchase Invoice",
-			{"inter_company_invoice_reference": original_si_name},
-			"name",
-			order_by="modified desc",
-		)
-
-	if not original_pi_name:
+		# Cancelled topilmasa — submitted yoki draft PI ni olmaymiz,
+		# chunki ular qayta submit qilinishi xato beradi.
 		frappe.msgprint(
-			f"Asl Purchase Invoice topilmadi ({original_si_name} uchun)",
+			f"Cancelled Purchase Invoice topilmadi ({original_si_name} uchun). "
+			f"PI ni avval cancel qiling, keyin SI ni amend qiling.",
 			indicator="orange",
+			title="PI Amend",
 		)
 		return None
 
