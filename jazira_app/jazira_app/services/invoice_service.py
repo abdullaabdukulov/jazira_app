@@ -12,7 +12,7 @@ class InvoiceConfig:
     company: str
     warehouse: str
     posting_date: str
-    customer: str = "Walk-in Customer"
+    customer: str = ""
     posting_time: str = "23:59:59"
     update_stock: bool = True
 
@@ -77,8 +77,11 @@ class InvoiceService:
     
     def _build_invoice(self, items: List[Dict], config: InvoiceConfig) -> "frappe.Document":
         """Build Sales Invoice document."""
+        if not config.customer:
+            frappe.throw(_("Mijoz (Customer) tanlanmagan"))
+
         si = frappe.new_doc("Sales Invoice")
-        
+
         # Header
         si.company = config.company
         si.customer = config.customer
