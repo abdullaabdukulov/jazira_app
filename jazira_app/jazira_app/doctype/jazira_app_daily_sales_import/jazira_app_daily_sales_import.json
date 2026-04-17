@@ -9,10 +9,10 @@
         "section_settings",
         "company",
         "source_warehouse",
+        "customer",
         "column_break_1",
         "posting_date",
         "allow_negative_stock",
-        "customer",
         "section_import",
         "excel_file",
         "column_break_2",
@@ -73,10 +73,12 @@
         {
             "fieldname": "customer",
             "fieldtype": "Link",
-            "label": "Customer",
+            "label": "Mijoz (Customer)",
             "options": "Customer",
-            "default": "Walk-in Customer",
-            "description": "Sales Invoice uchun mijoz"
+            "reqd": 1,
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "description": "Sales Invoice uchun mijoz. Odatda Walk-in Customer, lekin istalgan mijozni tanlash mumkin."
         },
         {
             "fieldname": "section_import",

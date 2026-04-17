@@ -339,7 +339,7 @@ def _process_import_sync(doc_name: str) -> Dict:
             company=doc.company,
             warehouse=doc.source_warehouse,
             posting_date=posting_date,
-            customer=doc.customer or "Walk-in Customer"
+            customer=doc.customer
         )
         si_name = invoice_service.create_sales_invoice(
             valid_items, invoice_config, submit=True
