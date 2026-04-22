@@ -112,18 +112,30 @@ def validate_items_exist(items: List[Dict]) -> Dict:
     for item in items:
         item_name = item.get("item_name", "")
         row_num = item.get("row_num", 0)
-        
-        # Try exact match first
-        item_code = frappe.db.get_value("Item", {"item_name": item_name}, "name")
-        
-        # Try partial match
+
+        # Try exact match on item code (name) first
+        item_code = frappe.db.get_value("Item", {"name": item_name}, "name")
+
+        # Try exact match on item_name
+        if not item_code:
+            item_code = frappe.db.get_value("Item", {"item_name": item_name}, "name")
+
+        # Try partial match on item_name
         if not item_code:
             item_code = frappe.db.get_value(
                 "Item",
                 {"item_name": ["like", f"%{item_name}%"]},
                 "name"
             )
-        
+
+        # Try partial match on item code
+        if not item_code:
+            item_code = frappe.db.get_value(
+                "Item",
+                {"name": ["like", f"%{item_name}%"]},
+                "name"
+            )
+
         if item_code:
             item["item_code"] = item_code
             item["found"] = True
