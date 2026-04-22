@@ -62,6 +62,7 @@ def _create_sales_invoice(so_doc):
             if not item.warehouse:
                 item.warehouse = sklad_warehouse
 
+    si.set_posting_time = 1
     si.posting_date = so_doc.transaction_date
     si.due_date = so_doc.transaction_date
 
@@ -126,7 +127,9 @@ def _create_purchase_invoice(si_doc, branch_warehouse=None):
         for item in pi.items:
             item.expense_account = inventory_account
 
+    pi.set_posting_time = 1
     pi.posting_date = si_doc.posting_date
+    pi.bill_date = si_doc.posting_date
     pi.due_date = si_doc.posting_date
 
     pi.insert(ignore_permissions=True)
