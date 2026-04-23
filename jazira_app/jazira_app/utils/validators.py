@@ -44,6 +44,14 @@ def validate_import_prerequisites(
 
     return {"success": len(errors) == 0, "message": "\n".join(errors), "errors": errors}
 
+def validate_warehouse_company(warehouse: str, company: str):
+    """Validate that warehouse belongs to the given company."""
+    wh_company = frappe.db.get_value("Warehouse", warehouse, "company")
+    if wh_company and wh_company != company:
+        raise ValidationError(
+            _("Warehouse '{0}' kompaniyaga tegishli emas: {1}").format(warehouse, company)
+        )
+
 def validate_items_exist(items: List[Dict]) -> Dict:
     """Validate that all items exist in ERPNext, with mapping support."""
     valid_items = []
