@@ -61,6 +61,7 @@ class InvoiceService:
             # Header
             si.company = config.company
             si.customer = config.customer
+            si.set_posting_time = 1
             si.posting_date = config.posting_date
             si.posting_time = config.posting_time
             si.due_date = config.posting_date

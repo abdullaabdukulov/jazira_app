@@ -96,6 +96,7 @@ class StockService:
         
         se = frappe.new_doc("Stock Entry")
         se.stock_entry_type = "Manufacture"
+        se.set_posting_time = 1
         se.company = config.company
         se.posting_date = config.posting_date
         se.posting_time = config.posting_time
