@@ -65,6 +65,10 @@ class InvoiceService:
             si.posting_time = config.posting_time
             si.due_date = config.posting_date
             
+            # Prevent payment terms from recalculating due_date
+            si.payment_terms_template = ""
+            si.ignore_default_payment_terms_template = 1
+            
             # Stock settings
             si.update_stock = 1 if config.update_stock else 0
             si.set_warehouse = config.warehouse
@@ -81,6 +85,10 @@ class InvoiceService:
             
             si.flags.ignore_permissions = True
             si.insert()
+            
+            # Force due_date after insert (in case it was recalculated)
+            if str(si.due_date) < str(si.posting_date):
+                si.due_date = si.posting_date
             
             if submit:
                 si.submit()
