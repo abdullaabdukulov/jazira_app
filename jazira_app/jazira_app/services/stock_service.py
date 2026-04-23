@@ -24,7 +24,7 @@ class StockService:
     
     Handles Manufacture Stock Entry creation for restaurant workflow:
     - Single warehouse mode (Variant A)
-    - One Stock Entry per BOM item (ERPNext limitation)
+    - Batched items (Multiple finished items in one Stock Entry if supported)
     """
     
     @contextmanager
@@ -45,17 +45,19 @@ class StockService:
         self,
         items: List[Dict],
         config: StockEntryConfig,
-        submit: bool = True
+        submit: bool = True,
+        batch_size: int = 50
     ) -> List[str]:
         """
         Create Manufacture Stock Entries for items with BOM.
         
-        One Stock Entry per item (ERPNext limitation: only one is_finished_item per SE).
+        Groups items into batches to reduce number of documents.
         
         Args:
             items: List of items with 'item_code', 'qty', 'bom' keys
             config: Stock entry configuration
             submit: Whether to submit entries
+            batch_size: Number of finished items per Stock Entry
             
         Returns:
             List of created Stock Entry names
@@ -65,95 +67,93 @@ class StockService:
         
         created_entries = []
         
-        with self._stock_flags(config.allow_negative_stock, mute_messages=True):
-            for item in items:
-                entry_name = self._create_single_manufacture_entry(item, config, submit)
+        # Split items into batches
+        for i in range(0, len(items), batch_size):
+            batch = items[i:i + batch_size]
+            
+            with self._stock_flags(config.allow_negative_stock, mute_messages=True):
+                entry_name = self._create_batch_manufacture_entry(batch, config, submit)
                 if entry_name:
                     created_entries.append(entry_name)
         
         return created_entries
     
-    def _create_single_manufacture_entry(
+    def _create_batch_manufacture_entry(
         self,
-        item: Dict,
+        batch_items: List[Dict],
         config: StockEntryConfig,
         submit: bool
     ) -> Optional[str]:
-        """Create a single Manufacture Stock Entry."""
-        item_code = item.get("item_code")
-        qty = item.get("qty", 0)
-        bom = item.get("bom")
+        """Create a single Stock Entry for multiple finished items."""
         
-        if not all([item_code, qty > 0, bom]):
-            return None
-        
-        # Get raw materials from BOM
-        raw_materials = bom_service.get_raw_materials(bom, qty)
-        
-        if not raw_materials:
-            return None
-        
-        # Create Stock Entry
         se = frappe.new_doc("Stock Entry")
         se.stock_entry_type = "Manufacture"
         se.company = config.company
         se.posting_date = config.posting_date
         se.posting_time = config.posting_time
-        
-        # Single warehouse mode
         se.from_warehouse = config.warehouse
         se.to_warehouse = config.warehouse
         
-        # Add raw materials (consumed)
-        for rm in raw_materials:
+        has_items = False
+        
+        for item in batch_items:
+            item_code = item.get("item_code")
+            qty = item.get("qty", 0)
+            bom = item.get("bom")
+            
+            if not all([item_code, qty > 0, bom]):
+                continue
+                
+            # Get raw materials from BOM
+            raw_materials = bom_service.get_raw_materials(bom, qty)
+            if not raw_materials:
+                continue
+                
+            has_items = True
+            
+            # Add raw materials (consumed)
+            for rm in raw_materials:
+                se.append("items", {
+                    "item_code": rm.item_code,
+                    "qty": rm.qty,
+                    "uom": rm.uom,
+                    "s_warehouse": config.warehouse,
+                    "t_warehouse": None,
+                    "is_finished_item": 0,
+                    "allow_zero_valuation_rate": 1
+                })
+            
+            # Add finished item (produced)
+            item_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
             se.append("items", {
-                "item_code": rm.item_code,
-                "qty": rm.qty,
-                "uom": rm.uom,
-                "s_warehouse": config.warehouse,
-                "t_warehouse": None,
-                "is_finished_item": 0,
+                "item_code": item_code,
+                "qty": qty,
+                "uom": item_uom,
+                "s_warehouse": None,
+                "t_warehouse": config.warehouse,
+                "is_finished_item": 1,
+                "bom_no": bom,
                 "allow_zero_valuation_rate": 1
             })
-        
-        # Add finished item (produced)
-        item_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
-        se.append("items", {
-            "item_code": item_code,
-            "qty": qty,
-            "uom": item_uom,
-            "s_warehouse": None,
-            "t_warehouse": config.warehouse,
-            "is_finished_item": 1,
-            "bom_no": bom,
-            "allow_zero_valuation_rate": 1
-        })
-        
+            
+        if not has_items:
+            return None
+            
         # Save and submit
         se.flags.ignore_permissions = True
         se.insert()
         
         if submit:
             se.submit()
-        
-        return se.name
-    
-    def cancel_stock_entries(self, entry_names: List[str]) -> int:
-        """
-        Cancel multiple Stock Entries.
-        
-        Args:
-            entry_names: List of Stock Entry names
             
-        Returns:
-            Number of cancelled entries
-        """
+        return se.name
+
+    def cancel_stock_entries(self, entry_names: List[str]) -> int:
+        """Cancel multiple Stock Entries."""
         cancelled = 0
-        
         for name in entry_names:
             if not name or not frappe.db.exists("Stock Entry", name):
                 continue
-            
             try:
                 se = frappe.get_doc("Stock Entry", name)
                 if se.docstatus == 1:
@@ -161,7 +161,6 @@ class StockService:
                     cancelled += 1
             except Exception:
                 pass
-        
         return cancelled
 
 

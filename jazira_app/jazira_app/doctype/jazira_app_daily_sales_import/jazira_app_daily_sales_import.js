@@ -6,9 +6,58 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         frm.trigger('validate_prerequisites');
         frm.trigger('format_stock_entry_links');
         
+        // Register realtime listeners ONCE per form instance
+        if (!frm._realtime_bound) {
+            frm._realtime_bound = true;
+
+            // Live log listener
+            frappe.realtime.on('restaurant_import_log', (data) => {
+                if (data.doc_name === frm.doc.name) {
+                    if (data.msg.includes('SANA:') || data.msg.includes('YAKUNLANDI')) {
+                        frappe.show_alert({ message: data.msg, indicator: 'blue' });
+                    }
+                }
+            });
+
+            // Background job completion listeners
+            frappe.realtime.on('restaurant_import_success', (data) => {
+                if (data.doc_name === frm.doc.name) {
+                    if (frm._import_poll) {
+                        clearInterval(frm._import_poll);
+                        frm._import_poll = null;
+                    }
+                    frappe.show_alert({ message: __('✅ Import muvaffaqiyatli yakunlandi!'), indicator: 'green' }, 10);
+                    frm.reload_doc();
+                }
+            });
+
+            frappe.realtime.on('restaurant_import_failed', (data) => {
+                if (data.doc_name === frm.doc.name) {
+                    if (frm._import_poll) {
+                        clearInterval(frm._import_poll);
+                        frm._import_poll = null;
+                    }
+                    frappe.show_alert({ message: __('❌ Import xatolik bilan yakunlandi'), indicator: 'red' }, 10);
+                    frm.reload_doc();
+                }
+            });
+        }
+
         // Status indicator
         const colors = { Draft: 'blue', Processing: 'orange', Processed: 'green', Failed: 'red' };
         frm.page.set_indicator(__(frm.doc.status), colors[frm.doc.status] || 'gray');
+
+        // If status is Processing, start polling in case we missed the realtime event
+        if (frm.doc.status === 'Processing' && !frm._import_poll) {
+            frm._import_poll = setInterval(() => {
+                frm.reload_doc().then(() => {
+                    if (frm.doc.status === 'Processed' || frm.doc.status === 'Failed') {
+                        clearInterval(frm._import_poll);
+                        frm._import_poll = null;
+                    }
+                });
+            }, 5000);
+        }
     },
     
     company(frm) {
@@ -84,17 +133,33 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
     },
     
     format_stock_entry_links(frm) {
-        if (!frm.doc.stock_entry || frm.doc.status !== 'Processed') return;
+        if (frm.doc.status !== 'Processed') return;
         
-        const links = frm.doc.stock_entry.split(',')
-            .map(s => s.trim()).filter(s => s)
-            .map(se => `<a href="/app/stock-entry/${se}">${se}</a>`)
-            .join('<br>');
-        
-        setTimeout(() => {
-            const el = frm.fields_dict.stock_entry?.$wrapper?.find('.like-disabled-input, .control-value');
-            if (el?.length) el.html(links);
-        }, 100);
+        // Stock Entry links
+        if (frm.doc.stock_entry) {
+            const se_links = frm.doc.stock_entry.split(',')
+                .map(s => s.trim()).filter(s => s)
+                .map(se => `<a href="/app/stock-entry/${se}">${se}</a>`)
+                .join('<br>');
+            
+            setTimeout(() => {
+                const el = frm.fields_dict.stock_entry?.$wrapper?.find('.like-disabled-input, .control-value');
+                if (el?.length) el.html(se_links);
+            }, 100);
+        }
+
+        // Sales Invoice links
+        if (frm.doc.sales_invoice) {
+            const si_links = frm.doc.sales_invoice.split(',')
+                .map(s => s.trim()).filter(s => s)
+                .map(si => `<a href="/app/sales-invoice/${si}">${si}</a>`)
+                .join('<br>');
+            
+            setTimeout(() => {
+                const el = frm.fields_dict.sales_invoice?.$wrapper?.find('.like-disabled-input, .control-value');
+                if (el?.length) el.html(si_links);
+            }, 100);
+        }
     },
     
     // =========================================================================
@@ -108,6 +173,13 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
             frm.add_custom_button(__('📋 Preview'), () => frm.trigger('show_preview'), __('Actions'));
             frm.add_custom_button(__('✓ Validate'), () => frm.trigger('validate_items'), __('Actions'));
             frm.add_custom_button(__('▶ Process Import'), () => frm.trigger('process_import')).addClass('btn-primary');
+        }
+
+        if (frm.doc.status === 'Processing') {
+            frm.set_intro(__('⏳ Import fonada ishlayapti... Sahifa avtomatik yangilanadi.'), 'blue');
+            frm.disable_save();
+            // Allow force-cancel if stuck
+            frm.add_custom_button(__('✕ Force Cancel'), () => frm.trigger('cancel_import')).addClass('btn-danger');
         }
         
         if (frm.doc.status === 'Processed') {
@@ -245,37 +317,45 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                     <div class="alert alert-info mt-3">
                         <strong>Workflow:</strong><br>
                         1️⃣ BOM li → Manufacture<br>
-                        2️⃣ Barcha → Sales Invoice (Update Stock ON)
+                        2️⃣ Barcha → Sales Invoice (Update Stock ON)<br><br>
+                        <em>Import fonada ishlaydi — katta fayllar ham timeout bermaydi.</em>
                     </div>`
             }],
             primary_action_label: __('✓ Import qilish'),
             primary_action() {
                 dlg.hide();
-                
+
                 frappe.call({
                     method: 'jazira_app.jazira_app.api.daily_sales_import.process_import',
-                    args: { doc_name: frm.doc.name, background: false },
+                    args: { doc_name: frm.doc.name },
                     freeze: true,
-                    freeze_message: __('Import jarayoni...'),
+                    freeze_message: __('Import fonga yuklanmoqda...'),
                     callback(r) {
                         if (!r.message) return;
                         const res = r.message;
-                        
+
                         if (res.success) {
-                            const seLinks = (res.stock_entries || [])
-                                .map((se, i) => `<p>🏭 <a href="/app/stock-entry/${se}">Manufacture ${i + 1}: ${se}</a></p>`)
-                                .join('') || '<p><em>Manufacture yo\'q</em></p>';
-                            
                             frappe.msgprint({
-                                title: __('✅ Muvaffaqiyatli'),
-                                indicator: 'green',
-                                message: `
-                                    <p>✅ <strong>${res.total_items}</strong> ta item</p>
-                                    <p>🏭 BOM: <strong>${res.items_with_bom}</strong> | 📦 Direct: <strong>${res.items_without_bom}</strong></p>
-                                    <p>💰 Jami: <strong>${format_currency(res.total_amount, 'UZS')}</strong></p>
-                                    <hr>${seLinks}
-                                    <p>📄 <a href="/app/sales-invoice/${res.sales_invoice}">Sales Invoice: ${res.sales_invoice}</a></p>`
+                                title: __('✅ Fon rejimi'),
+                                indicator: 'blue',
+                                message: __('Import fonada boshlandi. Sahifa avtomatik yangilanadi.')
                             });
+
+                            // Start polling for completion
+                            frm._import_poll = setInterval(() => {
+                                frm.reload_doc().then(() => {
+                                    if (frm.doc.status === 'Processed' || frm.doc.status === 'Failed') {
+                                        clearInterval(frm._import_poll);
+                                        frm._import_poll = null;
+
+                                        if (frm.doc.status === 'Processed') {
+                                            frappe.show_alert({ message: __('✅ Import muvaffaqiyatli yakunlandi!'), indicator: 'green' }, 10);
+                                        } else {
+                                            frappe.show_alert({ message: __('❌ Import xatolik bilan yakunlandi'), indicator: 'red' }, 10);
+                                        }
+                                    }
+                                });
+                            }, 5000); // Poll every 5 seconds
                         } else {
                             frappe.msgprint({ title: __('❌ Xato'), indicator: 'red', message: res.message });
                         }

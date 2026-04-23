@@ -56,8 +56,8 @@ class ExcelService:
 
         Returns:
             Dict with keys:
-                - items: List of dicts with keys: item_name, qty, rate, row_num
-                - posting_date: str (YYYY-MM-DD) if datetime column found, else None
+                - items: List of dicts with keys: item_name, qty, rate, row_num, date
+                - posting_date: str (YYYY-MM-DD) from first row as fallback
 
         Raises:
             frappe.ValidationError: If file cannot be read or required columns missing
@@ -82,8 +82,12 @@ class ExcelService:
             # Read data rows
             items = self._read_data_rows(ws, column_indices, header_row)
 
-            # Extract posting date from datetime column
-            excel_date = self._extract_posting_date(ws, column_indices, header_row)
+            # Extract first valid date as fallback/summary date
+            excel_date = None
+            for item in items:
+                if item.get("date"):
+                    excel_date = item["date"]
+                    break
 
             return {
                 "items": items,
@@ -143,6 +147,7 @@ class ExcelService:
         item_name_col = column_indices["item_name"] - 1
         qty_col = column_indices["qty"] - 1
         rate_col = column_indices.get("rate", 0) - 1 if "rate" in column_indices else None
+        dt_col = column_indices.get("datetime", 0) - 1 if "datetime" in column_indices else None
         
         for row_num, row in enumerate(
             worksheet.iter_rows(min_row=header_row + 1),
@@ -166,59 +171,43 @@ class ExcelService:
             rate = 0.0
             if rate_col is not None and rate_col >= 0:
                 rate = parse_numeric(self._get_cell_value(row, rate_col))
+
+            # Get date (optional per row)
+            item_date = None
+            if dt_col is not None and dt_col >= 0:
+                item_date = self._parse_cell_date(row[dt_col].value)
             
             items.append({
                 "item_name": item_name,
                 "qty": qty,
                 "rate": rate,
-                "row_num": row_num
+                "row_num": row_num,
+                "date": item_date
             })
         
         return items
     
-    def _extract_posting_date(
-        self,
-        worksheet,
-        column_indices: Dict[str, int],
-        header_row: int
-    ) -> Optional[str]:
-        """
-        Extract posting date from datetime column.
-
-        Reads the first data row's datetime value and returns as YYYY-MM-DD string.
-        Returns None if no datetime column found.
-        """
-        if "datetime" not in column_indices:
+    def _parse_cell_date(self, cell_value) -> Optional[str]:
+        """Parse a single cell value into YYYY-MM-DD string."""
+        if cell_value is None:
             return None
 
-        dt_col = column_indices["datetime"] - 1
+        # Handle datetime/date objects from Excel
+        if isinstance(cell_value, datetime):
+            return cell_value.strftime("%Y-%m-%d")
+        if isinstance(cell_value, date):
+            return cell_value.strftime("%Y-%m-%d")
 
-        for row in worksheet.iter_rows(min_row=header_row + 1):
-            if dt_col < 0 or dt_col >= len(row):
-                return None
-
-            cell_value = row[dt_col].value
-            if cell_value is None:
-                continue
-
-            # Handle datetime/date objects from Excel
-            if isinstance(cell_value, datetime):
-                return cell_value.strftime("%Y-%m-%d")
-            if isinstance(cell_value, date):
-                return cell_value.strftime("%Y-%m-%d")
-
-            # Handle string dates
-            cell_str = str(cell_value).strip()
-            if not cell_str:
-                continue
-
-            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S"):
-                try:
-                    return datetime.strptime(cell_str, fmt).strftime("%Y-%m-%d")
-                except ValueError:
-                    continue
-
+        # Handle string dates
+        cell_str = str(cell_value).strip()
+        if not cell_str:
             return None
+
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S"):
+            try:
+                return datetime.strptime(cell_str, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
 
         return None
 

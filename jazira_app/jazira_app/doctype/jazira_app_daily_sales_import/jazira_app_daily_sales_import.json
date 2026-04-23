@@ -128,9 +128,8 @@
         },
         {
             "fieldname": "sales_invoice",
-            "fieldtype": "Link",
+            "fieldtype": "Small Text",
             "label": "Sales Invoice",
-            "options": "Sales Invoice",
             "read_only": 1
         },
         {
