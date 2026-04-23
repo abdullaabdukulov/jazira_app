@@ -1,5 +1,6 @@
 from typing import Dict, List, Any
 from collections import defaultdict
+import copy
 
 import frappe
 from frappe import _
@@ -309,8 +310,9 @@ def _process_import_sync(doc_name: str) -> Dict:
             log(f"\n--- [{idx}/{len(sorted_dates)}] SANA: {d} ({len(date_items)} ta item) ---")
             
             try:
-                # 5. Categorize by BOM
-                categorized = bom_service.categorize_items_by_bom(date_items)
+                # 5. Categorize by BOM (deep copy to prevent mutation across dates)
+                date_items_copy = copy.deepcopy(date_items)
+                categorized = bom_service.categorize_items_by_bom(date_items_copy)
                 items_with_bom = categorized["with_bom"]
                 
                 # 6. Create Manufacture Stock Entries
@@ -377,6 +379,8 @@ def _process_import_sync(doc_name: str) -> Dict:
     except Exception as e:
         frappe.db.rollback()
         log(f"\n❌ XATO: {str(e)}")
+        # Re-read doc after rollback to get last committed state
+        doc.reload()
         doc.db_set("status", "Failed")
         doc.db_set("error_log", str(e))
         frappe.db.commit()

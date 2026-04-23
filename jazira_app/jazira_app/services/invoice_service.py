@@ -86,8 +86,9 @@ class InvoiceService:
             si.flags.ignore_permissions = True
             si.insert()
             
-            # Force due_date after insert (in case it was recalculated)
+            # Force due_date after insert (in case payment terms recalculated it)
             if str(si.due_date) < str(si.posting_date):
+                si.db_set("due_date", si.posting_date)
                 si.due_date = si.posting_date
             
             if submit:
@@ -102,13 +103,11 @@ class InvoiceService:
         if not invoice_name or not frappe.db.exists("Sales Invoice", invoice_name):
             return False
         
-        try:
-            si = frappe.get_doc("Sales Invoice", invoice_name)
-            if si.docstatus == 1:
-                si.cancel()
-                return True
-        except Exception:
-            pass
+        si = frappe.get_doc("Sales Invoice", invoice_name)
+        if si.docstatus == 1:
+            si.flags.ignore_permissions = True
+            si.cancel()
+            return True
         
         return False
     

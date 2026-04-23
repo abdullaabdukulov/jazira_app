@@ -101,6 +101,8 @@ class StockService:
         se.posting_time = config.posting_time
         se.from_warehouse = config.warehouse
         se.to_warehouse = config.warehouse
+        se.bom_no = bom
+        se.fg_completed_qty = qty
         
         # Add raw materials (consumed)
         for rm in raw_materials:
@@ -123,8 +125,7 @@ class StockService:
             "s_warehouse": None,
             "t_warehouse": config.warehouse,
             "is_finished_item": 1,
-            "bom_no": bom,
-            "allow_zero_valuation_rate": 1
+            "bom_no": bom
         })
         
         # Save and submit
@@ -142,13 +143,11 @@ class StockService:
         for name in entry_names:
             if not name or not frappe.db.exists("Stock Entry", name):
                 continue
-            try:
-                se = frappe.get_doc("Stock Entry", name)
-                if se.docstatus == 1:
-                    se.cancel()
-                    cancelled += 1
-            except Exception:
-                pass
+            se = frappe.get_doc("Stock Entry", name)
+            if se.docstatus == 1:
+                se.flags.ignore_permissions = True
+                se.cancel()
+                cancelled += 1
         return cancelled
 
 
