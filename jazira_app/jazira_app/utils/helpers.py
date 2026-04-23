@@ -37,8 +37,8 @@ def parse_numeric(value: Any) -> float:
     if not str_val:
         return 0.0
     
-    # Remove spaces (thousand separators)
-    str_val = str_val.replace(" ", "")
+    # Remove spaces and non-breaking spaces (thousand separators)
+    str_val = str_val.replace("\u00a0", "").replace(" ", "")
     
     # Handle comma/dot formats
     if "," in str_val:
