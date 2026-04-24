@@ -126,7 +126,8 @@ class StockService:
             "s_warehouse": None,
             "t_warehouse": config.warehouse,
             "is_finished_item": 1,
-            "bom_no": bom
+            "bom_no": bom,
+            "allow_zero_valuation_rate": 1
         })
         
         # Save and submit
