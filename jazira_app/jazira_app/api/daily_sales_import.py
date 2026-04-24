@@ -304,9 +304,32 @@ def _process_import_sync(doc_name: str) -> Dict:
         all_si_names = []
         total_amount = 0
         
+        # Resume support: load previously committed SE/SI names from a failed run
+        already_done_dates = set()
+        if doc.sales_invoice:
+            existing_si_names = [s.strip() for s in doc.sales_invoice.split(",") if s.strip()]
+            all_si_names.extend(existing_si_names)
+            # Find which dates already have SIs
+            for si_name in existing_si_names:
+                si_date = frappe.db.get_value("Sales Invoice", si_name, "posting_date")
+                if si_date:
+                    already_done_dates.add(str(si_date))
+        if doc.stock_entry:
+            existing_se_names = [s.strip() for s in doc.stock_entry.split(",") if s.strip()]
+            all_se_names.extend(existing_se_names)
+        
+        if already_done_dates:
+            log(f"   ♻️ Resume: {len(already_done_dates)} ta sana oldin bajarilgan, o'tkazib yuboriladi")
+        
         # Process each date
         for idx, d in enumerate(sorted_dates, 1):
             date_items = items_by_date[d]
+            
+            # Skip already processed dates (resume mode)
+            if d in already_done_dates:
+                log(f"\n--- [{idx}/{len(sorted_dates)}] SANA: {d} — ⏭️ oldin bajarilgan, skip ---")
+                continue
+            
             log(f"\n--- [{idx}/{len(sorted_dates)}] SANA: {d} ({len(date_items)} ta item) ---")
             
             try:

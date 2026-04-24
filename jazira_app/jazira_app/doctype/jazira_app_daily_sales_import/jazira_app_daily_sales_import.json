@@ -121,14 +121,14 @@
         },
         {
             "fieldname": "stock_entry",
-            "fieldtype": "Small Text",
+            "fieldtype": "Long Text",
             "label": "Stock Entries (Manufacture)",
             "read_only": 1,
             "description": "Har bir BOM li item uchun alohida Manufacture Stock Entry"
         },
         {
             "fieldname": "sales_invoice",
-            "fieldtype": "Small Text",
+            "fieldtype": "Long Text",
             "label": "Sales Invoice",
             "read_only": 1
         },
