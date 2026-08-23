@@ -910,6 +910,10 @@ class Kassa(Document):
         pe.target_exchange_rate = 1
         pe.reference_no = self.name
         pe.reference_date = self.date
+        # Kassa hujjatiga BOSILADIGAN havola (reference_no oddiy matn xolos).
+        # Maydon after_migrate'da yaratiladi — hali bo'lmasa ham to'lov to'xtamasin.
+        if frappe.db.has_column("Payment Entry", "custom_kassa"):
+            pe.custom_kassa = self.name
         if self.primechaniya:
             pe.remarks = self.primechaniya
         pe.insert(ignore_permissions=True)
