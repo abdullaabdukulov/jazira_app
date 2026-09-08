@@ -416,7 +416,7 @@ CATEGORY_DEFINITIONS = [
         "root_type": "Income",
         "party_type": None,
         "no_party": False,
-        "color": "#388e3c",
+        "color": "var(--alert-text-success)",
         "is_income": True,
     },
     {
@@ -425,7 +425,7 @@ CATEGORY_DEFINITIONS = [
         "root_type": "Expense",
         "party_type": "Supplier",
         "no_party": False,
-        "color": "#d32f2f",
+        "color": "var(--alert-text-danger)",
         "is_income": False,
     },
     {
@@ -434,7 +434,7 @@ CATEGORY_DEFINITIONS = [
         "root_type": "Expense",
         "party_type": "Employee",
         "no_party": False,
-        "color": "#d32f2f",
+        "color": "var(--alert-text-danger)",
         "is_income": False,
     },
     {
@@ -443,7 +443,7 @@ CATEGORY_DEFINITIONS = [
         "root_type": "Expense",
         "party_type": "Customer",
         "no_party": False,
-        "color": "#d32f2f",
+        "color": "var(--alert-text-danger)",
         "is_income": False,
     },
     {
@@ -452,7 +452,7 @@ CATEGORY_DEFINITIONS = [
         "root_type": "Expense",
         "party_type": None,
         "no_party": True,
-        "color": "#d32f2f",
+        "color": "var(--alert-text-danger)",
         "is_income": False,
     },
 ]
@@ -626,7 +626,7 @@ def get_summary_html(filters):
 
 def render_empty_summary(filters, prior_from, prior_to):
     return f"""
-    <div style="margin-top: 15px; padding: 20px; background: #fafafa; border-radius: 6px; text-align: center; color: #888;">
+    <div style="margin-top: 15px; padding: 20px; background: var(--control-bg); border-radius: 6px; text-align: center; color: var(--text-muted);">
         <strong>Маълумот топилмади</strong><br>
         Танланган давр учун маълумот йўқ.<br>
         <small>Жорий давр: {formatdate(filters['from_date'])} — {formatdate(filters['to_date'])}</small>
@@ -653,17 +653,17 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
         # Income uchun teskari: oshgan yashil, kamaygan qizil
         # Expense uchun: oshgan qizil, kamaygan yashil
         if delta == 0:
-            return "#666"
+            return "var(--text-muted)"
         if is_income:
-            return "#388e3c" if delta > 0 else "#d32f2f"
-        return "#d32f2f" if delta > 0 else "#388e3c"
+            return "var(--alert-text-success)" if delta > 0 else "var(--alert-text-danger)"
+        return "var(--alert-text-danger)" if delta > 0 else "var(--alert-text-success)"
 
     def trend_arrow(delta):
         if delta > 0:
             return '<span style="color: inherit; font-size: 13px;">▲</span>'
         elif delta < 0:
             return '<span style="color: inherit; font-size: 13px;">▼</span>'
-        return '<span style="color: #999;">—</span>'
+        return '<span style="color: var(--text-muted);">—</span>'
 
     def anomaly_badge(delta_pct, prior, is_income=False):
         if prior == 0 or abs(delta_pct) < ANOMALY_THRESHOLD:
@@ -671,10 +671,10 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
         is_bad = (delta_pct > 0 and not is_income) or (delta_pct < 0 and is_income)
         if is_bad:
             label = "⚠ ОШГАН" if not is_income else "⚠ КАМАЙГАН"
-            return f'<span style="background: #ffebee; color: #c62828; padding: 2px 7px; border-radius: 10px; font-size: 10px; margin-left: 5px; font-weight: 600;">{label}</span>'
+            return f'<span style="background: var(--alert-bg-danger); color: var(--alert-text-danger); padding: 2px 7px; border-radius: 10px; font-size: 10px; margin-left: 5px; font-weight: 600;">{label}</span>'
         else:
             label = "✓ КАМАЙГАН" if not is_income else "✓ ОШГАН"
-            return f'<span style="background: #e8f5e9; color: #2e7d32; padding: 2px 7px; border-radius: 10px; font-size: 10px; margin-left: 5px; font-weight: 600;">{label}</span>'
+            return f'<span style="background: var(--alert-bg-success); color: var(--alert-text-success); padding: 2px 7px; border-radius: 10px; font-size: 10px; margin-left: 5px; font-weight: 600;">{label}</span>'
 
     # Umumiy summalar
     total_income_cur = category_data.get("income", {}).get("total_current", 0)
@@ -718,13 +718,13 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
 
     def render_movers(items, kind):
         if not items:
-            return f'<div style="color: #999; font-size: 12px; padding: 8px 0;">Маълумот йўқ</div>'
+            return f'<div style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">Маълумот йўқ</div>'
         out = ""
         for it in items:
-            color = "#d32f2f" if kind == "up" else "#388e3c"
+            color = "var(--alert-text-danger)" if kind == "up" else "var(--alert-text-success)"
             arrow = "▲" if kind == "up" else "▼"
             out += f"""
-                <div style="padding: 6px 0; border-bottom: 1px dashed #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 6px 0; border-bottom: 1px dashed var(--border-color); display: flex; justify-content: space-between; align-items: center;">
                     <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 10px;" title="{frappe.utils.escape_html(it['account_name'])}">
                         <span style="color: {color}; margin-right: 5px;">{arrow}</span>
                         {frappe.utils.escape_html(it['account_name'])}
@@ -753,10 +753,10 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
 
         is_anomaly = abs(delta_pct) >= ANOMALY_THRESHOLD and pri > 0
         is_bad = (delta_pct > 0 and not cat_def["is_income"]) or (delta_pct < 0 and cat_def["is_income"])
-        row_bg = "#fff5f5" if is_anomaly and is_bad else ("#f1f8e9" if cat_def["is_income"] else "")
+        row_bg = "var(--alert-bg-danger)" if is_anomaly and is_bad else ("var(--alert-bg-success)" if cat_def["is_income"] else "transparent")
 
         has_accounts = len(accounts) > 0
-        arrow_html = '<span class="exp-arrow exp-arrow-' + str(cat_counter) + '" style="display:inline-block; margin-right:6px; font-size:10px; transition: transform 0.2s; color:#666;">▶</span>' if has_accounts else '<span style="display:inline-block; width:14px; margin-right:6px;"></span>'
+        arrow_html = '<span class="exp-arrow exp-arrow-' + str(cat_counter) + '" style="display:inline-block; margin-right:6px; font-size:10px; transition: transform 0.2s; color:var(--text-muted);">▶</span>' if has_accounts else '<span style="display:inline-block; width:14px; margin-right:6px;"></span>'
         cursor_style = "cursor: pointer;" if has_accounts else ""
 
         onclick = ""
@@ -774,18 +774,18 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
 
         category_rows_html += f"""
             <tr style="background-color: {row_bg}; {cursor_style}" {onclick}>
-                <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: 500;">
+                <td style="padding: 12px; border-bottom: 1px solid var(--border-color); font-weight: 500;">
                     {arrow_html}{frappe.utils.escape_html(cat_def['label'])}
                 </td>
-                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; font-weight: 600; color: {cat_def['color']};">{fmt(cur)}</td>
-                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #888;">{fmt(pri)}</td>
-                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: {delta_color(delta, cat_def['is_income'])}; font-weight: 500;">
+                <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right; font-weight: 600; color: {cat_def['color']};">{fmt(cur)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right; color: var(--text-muted);">{fmt(pri)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right; color: {delta_color(delta, cat_def['is_income'])}; font-weight: 500;">
                     {trend_arrow(delta) if delta != 0 else ''} {fmt(delta) if delta != 0 else '—'}
                 </td>
-                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: {delta_color(delta, cat_def['is_income'])}; font-weight: 600;">
+                <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right; color: {delta_color(delta, cat_def['is_income'])}; font-weight: 600;">
                     {fmt_pct(delta_pct)}{anomaly_badge(delta_pct, pri, cat_def['is_income'])}
                 </td>
-                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center; color: #666;">{cat_obj.get('txn_count', 0)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: center; color: var(--text-muted);">{cat_obj.get('txn_count', 0)}</td>
             </tr>
         """
 
@@ -799,23 +799,23 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
 
             a_anomaly = abs(a_delta_pct) >= ANOMALY_THRESHOLD and a_pri > 0
             a_bad = (a_delta_pct > 0 and not cat_def["is_income"]) or (a_delta_pct < 0 and cat_def["is_income"])
-            a_bg = "#fff8e1" if a_anomaly and a_bad else "#fafafa"
+            a_bg = "var(--alert-bg-warning)" if a_anomaly and a_bad else "var(--control-bg)"
 
             category_rows_html += f"""
                 <tr class="exp-sub-{cat_counter}" style="display: none; background-color: {a_bg};">
-                    <td style="padding: 8px 12px 8px 36px; border-bottom: 1px solid #f0f0f0; font-size: 12px;">
+                    <td style="padding: 8px 12px 8px 36px; border-bottom: 1px solid var(--border-color); font-size: 12px;">
                         <div>{frappe.utils.escape_html(acc['account_name'])}</div>
-                        <div style="font-size: 10px; color: #aaa; margin-top: 1px;">{frappe.utils.escape_html(acc['account_id'])}</div>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 1px;">{frappe.utils.escape_html(acc['account_id'])}</div>
                     </td>
-                    <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; text-align: right; font-size: 12px;">{fmt(a_cur)}</td>
-                    <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; text-align: right; color: #999; font-size: 12px;">{fmt(a_pri)}</td>
-                    <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; text-align: right; color: {delta_color(a_delta, cat_def['is_income'])}; font-size: 12px;">
+                    <td style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); text-align: right; font-size: 12px;">{fmt(a_cur)}</td>
+                    <td style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); text-align: right; color: var(--text-muted); font-size: 12px;">{fmt(a_pri)}</td>
+                    <td style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); text-align: right; color: {delta_color(a_delta, cat_def['is_income'])}; font-size: 12px;">
                         {trend_arrow(a_delta) if a_delta != 0 else ''} {fmt(a_delta) if a_delta != 0 else '—'}
                     </td>
-                    <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; text-align: right; color: {delta_color(a_delta, cat_def['is_income'])}; font-size: 12px; font-weight: 500;">
+                    <td style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); text-align: right; color: {delta_color(a_delta, cat_def['is_income'])}; font-size: 12px; font-weight: 500;">
                         {fmt_pct(a_delta_pct)}{anomaly_badge(a_delta_pct, a_pri, cat_def['is_income'])}
                     </td>
-                    <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; text-align: center; color: #999; font-size: 12px;">{acc.get('txn_count', 0)}</td>
+                    <td style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 12px;">{acc.get('txn_count', 0)}</td>
                 </tr>
             """
 
@@ -831,15 +831,15 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
     # Asosiy ko'rsatkich uchun rang
     if total_income_cur > 0:
         # Net profit: musbat yashil, manfiy qizil
-        delta_card_color = "#388e3c" if main_metric_delta > 0 else "#d32f2f" if main_metric_delta < 0 else "#666"
-        delta_card_bg = "#e8f5e9" if main_metric_delta > 0 else "#ffebee" if main_metric_delta < 0 else "#f5f5f5"
-        delta_card_border = "#c8e6c9" if main_metric_delta > 0 else "#ffcdd2" if main_metric_delta < 0 else "#e0e0e0"
+        delta_card_color = "var(--alert-text-success)" if main_metric_delta > 0 else "var(--alert-text-danger)" if main_metric_delta < 0 else "var(--text-muted)"
+        delta_card_bg = "var(--alert-bg-success)" if main_metric_delta > 0 else "var(--alert-bg-danger)" if main_metric_delta < 0 else "var(--control-bg)"
+        delta_card_border = "var(--alert-bg-success)" if main_metric_delta > 0 else "var(--alert-bg-danger)" if main_metric_delta < 0 else "var(--border-color)"
         delta_caption = "Фойда ошган" if main_metric_delta > 0 else "Фойда камайган" if main_metric_delta < 0 else "Ўзгармаган"
     else:
         # Expense only
-        delta_card_color = "#d32f2f" if main_metric_delta > 0 else "#388e3c" if main_metric_delta < 0 else "#666"
-        delta_card_bg = "#ffebee" if main_metric_delta > 0 else "#e8f5e9" if main_metric_delta < 0 else "#f5f5f5"
-        delta_card_border = "#ffcdd2" if main_metric_delta > 0 else "#c8e6c9" if main_metric_delta < 0 else "#e0e0e0"
+        delta_card_color = "var(--alert-text-danger)" if main_metric_delta > 0 else "var(--alert-text-success)" if main_metric_delta < 0 else "var(--text-muted)"
+        delta_card_bg = "var(--alert-bg-danger)" if main_metric_delta > 0 else "var(--alert-bg-success)" if main_metric_delta < 0 else "var(--control-bg)"
+        delta_card_border = "var(--alert-bg-danger)" if main_metric_delta > 0 else "var(--alert-bg-success)" if main_metric_delta < 0 else "var(--border-color)"
         delta_caption = "Харажатлар ошган" if main_metric_delta > 0 else "Харажатлар камайган" if main_metric_delta < 0 else "Ўзгармаган"
 
     html = f"""
@@ -854,31 +854,31 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
                 <div style="font-size: 11px; opacity: 0.85; margin-top: 4px;">{header_label} · {period_days} кун</div>
             </div>
 
-            <div style="flex: 1; min-width: 220px; background: #f5f5f5; padding: 18px; border-radius: 8px; border: 1px solid #e0e0e0;">
-                <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Олдинги давр</div>
-                <div style="font-size: 13px; margin-top: 4px; color: #777;">{formatdate(prior_from)} — {formatdate(prior_to)}</div>
-                <div style="font-size: 24px; font-weight: 700; margin-top: 10px; color: #444;">{flt(main_metric_pri):,.2f}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">{header_label} · {period_days} кун</div>
+            <div style="flex: 1; min-width: 220px; background: var(--control-bg); padding: 18px; border-radius: 8px; border: 1px solid var(--border-color);">
+                <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Олдинги давр</div>
+                <div style="font-size: 13px; margin-top: 4px; color: var(--text-muted);">{formatdate(prior_from)} — {formatdate(prior_to)}</div>
+                <div style="font-size: 24px; font-weight: 700; margin-top: 10px; color: var(--text-color);">{flt(main_metric_pri):,.2f}</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{header_label} · {period_days} кун</div>
             </div>
 
             <div style="flex: 1; min-width: 220px; background: {delta_card_bg}; padding: 18px; border-radius: 8px; border: 1px solid {delta_card_border};">
-                <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Ўзгариш</div>
+                <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Ўзгариш</div>
                 <div style="font-size: 13px; margin-top: 4px; color: {delta_card_color}; font-weight: 600;">{trend_arrow(main_metric_delta)} {fmt_pct(main_metric_delta_pct)}</div>
                 <div style="font-size: 24px; font-weight: 700; margin-top: 10px; color: {delta_card_color};">{flt(main_metric_delta):,.2f}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">{delta_caption}</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{delta_caption}</div>
             </div>
         </div>
 
         <!-- TOP MOVERS -->
         <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 300px; background: white; border: 1px solid #ffcdd2; border-radius: 8px; padding: 14px;">
-                <div style="font-size: 13px; font-weight: 600; color: #c62828; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #ffebee;">
+            <div style="flex: 1; min-width: 300px; background: var(--card-bg); border: 1px solid var(--alert-bg-danger); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--alert-text-danger); margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid var(--alert-bg-danger);">
                     ⚠ Энг кўп ошган харажатлар
                 </div>
                 {render_movers(increases, "up")}
             </div>
-            <div style="flex: 1; min-width: 300px; background: white; border: 1px solid #c8e6c9; border-radius: 8px; padding: 14px;">
-                <div style="font-size: 13px; font-weight: 600; color: #2e7d32; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #e8f5e9;">
+            <div style="flex: 1; min-width: 300px; background: var(--card-bg); border: 1px solid var(--alert-bg-success); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--alert-text-success); margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid var(--alert-bg-success);">
                     ✓ Энг кўп камайган харажатлар
                 </div>
                 {render_movers(decreases, "down")}
@@ -886,20 +886,20 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
         </div>
 
         <!-- DDS-STYLE KATEGORIYA JADVAL -->
-        <div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
-            <div style="padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #e0e0e0; font-weight: 600; font-size: 14px;">
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;">
+            <div style="padding: 12px 16px; background: var(--control-bg); border-bottom: 1px solid var(--border-color); font-weight: 600; font-size: 14px;">
                 Категория бўйича умумий ҳисобот
-                <span style="font-weight: 400; color: #888; font-size: 12px; margin-left: 8px;">— қатор устига босинг, ичидаги счётлар очилади</span>
+                <span style="font-weight: 400; color: var(--text-muted); font-size: 12px; margin-left: 8px;">— қатор устига босинг, ичидаги счётлар очилади</span>
             </div>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead>
-                    <tr style="background: #f9f9f9;">
-                        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555;">Категория</th>
-                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555;">Жорий</th>
-                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555;">Олдинги</th>
-                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555;">Δ Сумма</th>
-                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555;">Δ %</th>
-                        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555;">Транз.</th>
+                    <tr style="background: var(--control-bg);">
+                        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-muted);">Категория</th>
+                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-muted);">Жорий</th>
+                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-muted);">Олдинги</th>
+                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-muted);">Δ Сумма</th>
+                        <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-muted);">Δ %</th>
+                        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-muted);">Транз.</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -918,9 +918,9 @@ def render_dds_summary(filters, prior_from, prior_to, category_data):
             </table>
         </div>
 
-        <div style="margin-top: 12px; padding: 10px 14px; background: #fffde7; border-left: 3px solid #fbc02d; border-radius: 4px; font-size: 12px; color: #6d4c00;">
+        <div style="margin-top: 12px; padding: 10px 14px; background: var(--alert-bg-warning); border-left: 3px solid #fbc02d; border-radius: 4px; font-size: 12px; color: var(--alert-text-warning);">
             <strong>Эслатма:</strong> Категория устига босиб, унинг ичидаги счётларни кенгайтиринг.
-            {ANOMALY_THRESHOLD:.0f}%дан кўпроқ ёмон томонга ўзгарганлар <span style="background: #ffebee; padding: 2px 6px; border-radius: 3px;">қизил билан</span> белгиланган.
+            {ANOMALY_THRESHOLD:.0f}%дан кўпроқ ёмон томонга ўзгарганлар <span style="background: var(--alert-bg-danger); padding: 2px 6px; border-radius: 3px;">қизил билан</span> белгиланган.
             Пастда ҳар бир транзакция бўйича тўлиқ рўйхат.
         </div>
     </div>

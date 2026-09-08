@@ -353,6 +353,10 @@ class Kassa(Document):
         je.user_remark = f"Kassa: {self.name} - {self.oborot}"
         if self.primechaniya:
             je.user_remark += f" | {self.primechaniya}"
+        # Kassa hujjatiga BOSILADIGAN havola (user_remark oddiy matn xolos).
+        # Maydon after_migrate'da yaratiladi — hali bo'lmasa ham ish to'xtamasin.
+        if frappe.db.has_column("Journal Entry", "custom_kassa"):
+            je.custom_kassa = self.name
 
         if self.oborot == "Перемещение":
             self._add_transfer_entries(je)
@@ -933,6 +937,8 @@ class Kassa(Document):
         je.user_remark = f"Kassa: {self.name} - {self.oborot} (inter-company)"
         if self.primechaniya:
             je.user_remark += f" | {self.primechaniya}"
+        if frappe.db.has_column("Journal Entry", "custom_kassa"):
+            je.custom_kassa = self.name
         exp_dr, exp_cr = (self.summa, 0) if expense_debit else (0, self.summa)
         je.append("accounts", {
             "account": expense_account,

@@ -28,7 +28,7 @@ def run():
 		run as setup_expense_allocation,
 	)
 	from jazira_app.jazira_app.setup.kassa_setup import (
-		ensure_payment_entry_kassa_field,
+		ensure_kassa_link_fields,
 	)
 
 	tasks = [
@@ -39,7 +39,7 @@ def run():
 		ensure_intercompany_customers,
 		ensure_customer_filial_field,
 		setup_expense_allocation,
-		ensure_payment_entry_kassa_field,
+		ensure_kassa_link_fields,
 	]
 	for fn in tasks:
 		try:
