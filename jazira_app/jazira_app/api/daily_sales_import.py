@@ -4,12 +4,14 @@ import copy
 
 import frappe
 from frappe import _
+from frappe import _lt
 from frappe.utils import nowdate
 
 from jazira_app.jazira_app.utils import (
     calculate_file_hash,
     validate_import_prerequisites,
     validate_items_exist,
+    format_item_problems,
     check_duplicate_import,
     check_duplicate_dates
 )
@@ -45,6 +47,250 @@ def get_default_warehouse(company: str) -> Dict:
     return {"source_warehouse": warehouse}
 
 
+# =============================================================================
+# TEKSHIRUV BOSQICHI
+# =============================================================================
+#
+# Qoida: HUJJAT YARATISHDAN OLDIN hamma narsa tekshiriladi. Bittagina xato
+# bo'lsa — hech qanday Sales Invoice yoki Stock Entry yaratilmaydi.
+#
+# Avval bunday emas edi: tekshiruv yuzaki bo'lib, import sanama-sana
+# yaratib ketaverardi va 5-kunda xato chiqsa, oldingi 4 kunning hujjatlari
+# tizimda submit holatda qolib ketardi.
+
+class PreflightError(Exception):
+    """Tekshiruv bosqichida to'xtatilgan import.
+
+    Oddiy Exception'dan farqi: xatoning TO'LIQ hisobotini ham olib yuradi.
+    Tashqi `except` bloki error_log'ga faqat qisqa xabarni yozib qo'ysa,
+    operator "batafsil sabab jurnalda" degan yozuvni ko'rib, jurnalda esa
+    o'sha qisqa xabarni topardi.
+    """
+
+    def __init__(self, message, report=""):
+        super().__init__(message)
+        self.report = report
+
+
+# _lt — "lazy" tarjima: matn modul yuklanganda emas, ishlatilganda
+# tarjima qilinadi. Oddiy _() ishlatilsa, jarayon qaysi tilda ko'tarilgan
+# bo'lsa, hamma foydalanuvchi uchun o'sha til qotib qolardi.
+SKIP_REASON_LABELS = {
+    "summary": _lt("yakuniy/jami qatori"),
+    "zero_qty": _lt("miqdori 0"),
+    "no_name": _lt("tovar nomi bo'sh"),
+    "negative_qty": _lt("MANFIY miqdor (qaytarilgan tovar)"),
+    "bad_qty": _lt("miqdorni o'qib bo'lmadi"),
+    "bad_rate": _lt("narxni o'qib bo'lmadi"),
+}
+
+# Bu sabablar importni TO'XTATADI — ular ma'lumot yo'qolishini bildiradi
+BLOCKING_SKIP_REASONS = ("negative_qty", "bad_qty", "bad_rate")
+
+
+def run_preflight_checks(doc) -> Dict:
+    """Importdan oldingi to'liq tekshiruv.
+
+    Excel'dagi har bir tovar ERPNext'da AYNAN shu nom bilan bormi, faolmi,
+    sotiladimi — hammasi shu yerda tekshiriladi. Shuningdek: narx ustuni,
+    tashlab yuborilgan qatorlar, dublikat sana va retsept (BOM) butunligi.
+
+    Qaytaradi: success, errors (bloklovchi), warnings (ogohlantirish),
+    row_errors (UI ro'yxati uchun), report (error_log matni), valid_items,
+    dates, excel_hash.
+    """
+    errors = []
+    warnings = []
+    row_errors = []
+    report_blocks = []
+
+    empty = {
+        "success": False, "errors": errors, "warnings": warnings,
+        "row_errors": row_errors, "report": "", "valid_items": [],
+        "dates": [], "excel_hash": "",
+    }
+
+    # 1) Hujjat rekvizitlari
+    if not doc.excel_file:
+        errors.append(_("Excel fayl yuklanmagan"))
+        empty["report"] = "\n".join(errors)
+        return empty
+
+    prereq = validate_import_prerequisites(
+        doc.company, doc.source_warehouse, str(doc.posting_date), doc.customer or ""
+    )
+    if not prereq["success"]:
+        errors.extend(prereq["errors"])
+
+    # 2) Excel o'qish
+    try:
+        excel_data = excel_service.read_sales_report(doc.excel_file)
+    except Exception as e:
+        errors.append(_("Excel o'qilmadi: {0}").format(str(e)))
+        empty["report"] = "\n".join(errors)
+        return empty
+
+    items = excel_data["items"]
+    skipped = excel_data.get("skipped") or []
+
+    if not items:
+        errors.append(_("Excel faylda sotuv qatori topilmadi"))
+
+    # 3) Narx ustuni — bo'lmasa hamma narsa 0 so'mga tushib ketardi
+    if not excel_data.get("has_rate_column"):
+        errors.append(_(
+            "Excel'da narx ustuni ('Narxi' / 'Цена продажи') topilmadi — "
+            "bu holda hamma sotuv 0 so'mga yozilib ketardi."
+        ))
+
+    # 4) O'qilmagan qatorlar — oshkor qilinadi
+    by_reason = defaultdict(list)
+    for sk in skipped:
+        by_reason[sk["reason"]].append(sk)
+
+    for reason, rows in by_reason.items():
+        label = str(SKIP_REASON_LABELS.get(reason, reason))
+        text = _("{0} ta qator o'qilmadi — {1}").format(len(rows), label)
+        if reason in BLOCKING_SKIP_REASONS:
+            # Bu qatorlarda HAQIQIY sotuv bor, lekin o'qib bo'lmadi yoki
+            # qaytarilgan tovar. Jimgina tashlansa — sotuv noto'g'ri
+            # chiqadi, shuning uchun import to'xtaydi.
+            sample = ", ".join(
+                _("{0}-qator: {1} [{2}]").format(
+                    r["row"], r["item_name"], r.get("raw", r.get("qty")))
+                for r in rows[:5])
+            errors.append(text + ". " + _("Qo'lda ko'rib chiqing: {0}").format(sample))
+        else:
+            warnings.append(text)
+
+    # 5) TOVARLAR — asosiy tekshiruv (aynan moslik)
+    validation = validate_items_exist(items)
+    valid_items = validation["valid_items"]
+    if validation["errors"]:
+        row_errors.extend(validation["errors"])
+        problem_text = format_item_problems(validation["problems"])
+        report_blocks.append(problem_text)
+        errors.append(_("{0} ta tovar ERPNext bilan mos kelmadi (quyida ro'yxati)").format(
+            len(validation["problems"])))
+
+    # 6) Narxi 0 bo'lgan qatorlar — ogohlantirish
+    zero_rate = [i for i in valid_items if not (i.get("rate") or 0)]
+    if zero_rate:
+        warnings.append(_("{0} ta qatorda narx 0 — sotuv summasiz yoziladi").format(len(zero_rate)))
+
+    # 7) Retsept (BOM) butunligi — yarim yo'lda to'xtab qolmasin
+    if valid_items:
+        errors.extend(_check_bom_integrity(valid_items, doc.company))
+
+    # 8) Dublikat fayl va dublikat sana
+    excel_hash = calculate_file_hash(doc.excel_file)
+    duplicate = check_duplicate_import(excel_hash, doc.name)
+    if duplicate["is_duplicate"]:
+        errors.append(_("Bu Excel avval import qilingan: {0}").format(duplicate["existing_doc"]))
+
+    fallback_date = str(doc.posting_date)
+    dates = sorted({(i.get("date") or fallback_date) for i in valid_items})
+    date_check = check_duplicate_dates(doc.company, dates, doc.name)
+    for c in date_check["conflicts"]:
+        errors.append(_("{0} sanasi allaqachon import qilingan ({1} → {2}). Avval o'sha importni bekor qiling.").format(
+            c["date"], c["import_doc"], c["sales_invoice"]))
+
+    # ── Yakuniy hisobot matni ──
+    #
+    # Tuzilishi ataylab sodda: eng tepada NIMA QILISH kerakligi, keyin
+    # tafsilot. Avval xatolar ro'yxati ikki marta (umumiy + batafsil)
+    # takrorlanib, o'qish qiyin bo'lardi.
+    report = ""
+    if errors:
+        head = [
+            "❌ " + _("IMPORT BAJARILMADI"),
+            "=" * 60,
+            "",
+        ]
+        if report_blocks:
+            head.append(_("Quyidagi tovarlar ERPNext bilan mos kelmadi."))
+            head.append(_("Ular to'g'rilanmaguncha hech qanday hujjat yaratilmaydi."))
+            head.append("")
+            head.append("-" * 60)
+            head.append("")
+            head.append("\n\n".join(report_blocks))
+            head.append("")
+
+        # Tovarlardan boshqa xatolar (sana dublikati, narx ustuni va h.k.)
+        other = [e for e in errors if _("mos kelmadi") not in e]
+        if other:
+            head.append("-" * 60)
+            head.append(_("Boshqa xatolar:"))
+            head.extend("  • {0}".format(e) for e in other)
+            head.append("")
+
+        head.append("=" * 60)
+        head.append(_("Tuzatgach, 'Import' tugmasini qayta bosing."))
+        report = "\n".join(head)
+
+    return {
+        "success": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "row_errors": row_errors,
+        "report": report,
+        "valid_items": valid_items,
+        "dates": dates,
+        "excel_hash": excel_hash,
+        "skipped": skipped,
+        "columns": excel_data.get("columns") or {},
+    }
+
+
+def _check_bom_integrity(valid_items: List[Dict], company: str) -> List[str]:
+    """Retseptli tovarlarning xomashyosi joyidami?
+
+    Xomashyo o'chirilgan bo'lsa yoki retsept bo'sh bo'lsa, Stock Entry
+    import o'rtasida yiqilardi (yoki jimgina yaratilmasdan qolardi) —
+    tovar sotilgan, lekin xomashyo hisobdan chiqmagan holat kelib chiqardi.
+    """
+    problems = []
+    checked = set()
+    needed = {}
+
+    for item in valid_items:
+        code = item.get("item_code")
+        if not code or code in checked:
+            continue
+        checked.add(code)
+
+        bom = bom_service.get_default_bom(code)
+        if not bom:
+            continue  # retseptsiz tovar — to'g'ridan-to'g'ri sotiladi
+
+        try:
+            materials = bom_service.get_raw_materials(bom, 1, company)
+        except Exception as e:
+            problems.append(_("'{0}' retsepti ({1}) ochilmadi: {2}").format(code, bom, str(e)))
+            continue
+
+        if not materials:
+            problems.append(_("'{0}' retsepti ({1}) bo'sh — xomashyo hisobdan chiqmaydi").format(code, bom))
+            continue
+
+        needed[code] = [m.item_code for m in materials]
+
+    # Butun xomashyo ro'yxati BITTA so'rovda tekshiriladi (avval har
+    # retsept uchun alohida so'rov ketardi — 112 ta retseptda ~2 sekund).
+    all_codes = {c for codes in needed.values() for c in codes}
+    disabled = set(frappe.get_all(
+        "Item", filters={"name": ["in", list(all_codes)], "disabled": 1}, pluck="name")
+    ) if all_codes else set()
+
+    for code, codes in needed.items():
+        bad = [c for c in codes if c in disabled]
+        if bad:
+            problems.append(_("'{0}' retseptidagi xomashyo o'chirilgan: {1}").format(
+                code, ", ".join(bad)))
+
+    return problems
+
+
 @frappe.whitelist()
 def get_preview_data(doc_name: str) -> Dict:
     """Get preview of Excel data before processing."""
@@ -56,13 +302,28 @@ def get_preview_data(doc_name: str) -> Dict:
     try:
         excel_data = excel_service.read_sales_report(doc.excel_file)
         items = excel_data["items"]
+        skipped = excel_data.get("skipped") or []
 
         validation = validate_items_exist(items)
         valid_items = validation["valid_items"]
 
+        # Retseptlar BITTA so'rovda olinadi. Avval har QATOR uchun alohida
+        # so'rov ketardi — 11 000 qatorli faylda ~18 sekund kutish.
+        codes = {i["item_code"] for i in valid_items if i.get("item_code")}
+        boms = {}
+        if codes:
+            for row in frappe.get_all(
+                "BOM",
+                filters={"item": ["in", list(codes)], "is_default": 1,
+                         "is_active": 1, "docstatus": 1},
+                fields=["name", "item"],
+            ):
+                boms.setdefault(row.item, row.name)
+
         for item in items:
-            if item.get("item_code"):
-                bom = bom_service.get_default_bom(item["item_code"])
+            code = item.get("item_code")
+            bom = boms.get(code) if code else None
+            if code:
                 item["has_bom"] = bool(bom)
                 item["bom"] = bom
                 item["type"] = "MANUFACTURE" if bom else "DIRECT SALE"
@@ -78,7 +339,10 @@ def get_preview_data(doc_name: str) -> Dict:
             "with_bom": len([i for i in items if i.get("has_bom")]),
             "without_bom": len([i for i in found_items if not i.get("has_bom")]),
             "total_qty": sum(i.get("qty", 0) for i in items),
-            "total_amount": sum(i.get("qty", 0) * i.get("rate", 0) for i in items)
+            "total_amount": sum(i.get("qty", 0) * i.get("rate", 0) for i in items),
+            # O'qilmagan qatorlar ham ko'rinsin — aks holda preview jamisi
+            # bilan import jamisi nega farq qilgani tushunarsiz bo'lardi.
+            "skipped": len(skipped),
         }
 
         return {
@@ -94,72 +358,39 @@ def get_preview_data(doc_name: str) -> Dict:
 
 @frappe.whitelist()
 def validate_excel_items(doc_name: str) -> Dict:
-    """Validate items in uploaded Excel file."""
+    """"Tekshirish" tugmasi — importni ishga tushirmasdan oldingi nazorat.
+
+    Import bosilganda ishlaydigan AYNAN o'sha tekshiruvni bajaradi, shuning
+    uchun bu yerda "toza" degan javob importda ham toza degani.
+    """
     doc = frappe.get_doc("Jazira App Daily Sales Import", doc_name)
-    
-    if not doc.excel_file:
-        return {
-            "success": False,
-            "message": _("Excel fayl yuklanmagan"),
-            "errors": [],
-            "items": []
-        }
-    
+
     try:
-        excel_data = excel_service.read_sales_report(doc.excel_file)
-        items = excel_data["items"]
-
-        if not items:
-            return {
-                "success": False,
-                "message": _("Excel faylda sotuv topilmadi"),
-                "errors": [],
-                "items": []
-            }
-        
-        validation = validate_items_exist(items)
-        
-        excel_hash = calculate_file_hash(doc.excel_file)
-        duplicate = check_duplicate_import(excel_hash, doc_name)
-        
-        errors = validation["errors"]
-        if duplicate["is_duplicate"]:
-            errors.insert(0, {
-                "row": 0,
-                "item_name": "",
-                "error": _("Bu Excel avval import qilingan: {0}").format(
-                    duplicate["existing_doc"]
-                )
-            })
-
-        # Sana bo'yicha dublikat — importni ishga tushirmasdan oldin ogohlantirish
-        fallback_date = str(doc.posting_date)
-        excel_dates = {(i.get("date") or fallback_date) for i in validation["valid_items"]}
-        date_check = check_duplicate_dates(doc.company, excel_dates, doc_name)
-        for c in date_check["conflicts"]:
-            errors.insert(0, {
-                "row": 0,
-                "item_name": "",
-                "error": _("{0} sanasi allaqachon import qilingan ({1}). Avval o'sha importni bekor qiling.").format(
-                    c["date"], c["import_doc"]
-                )
-            })
-        
-        totals = invoice_service.calculate_totals(validation["valid_items"])
-        
-        return {
-            "success": len(errors) == 0,
-            "message": _("{0} ta item topildi, {1} ta xato").format(
-                len(validation["valid_items"]), len(errors)
-            ),
-            "errors": errors,
-            "items": validation["valid_items"],
-            "total_qty": totals["total_qty"],
-            "total_amount": totals["total_amount"]
-        }
-        
+        pre = run_preflight_checks(doc)
     except Exception as e:
         return {"success": False, "message": str(e), "errors": [], "items": []}
+
+    # UI ro'yxati uchun: avval umumiy xatolar, keyin tovar bo'yicha qatorlar
+    errors = [{"row": 0, "item_name": "", "error": e} for e in pre["errors"]]
+    errors.extend(pre["row_errors"])
+
+    totals = invoice_service.calculate_totals(pre["valid_items"])
+
+    if pre["success"]:
+        message = _("✅ Tekshiruv toza: {0} ta qator, {1:,.0f} so'm. Import qilsa bo'ladi.").format(
+            len(pre["valid_items"]), totals["total_amount"])
+    else:
+        message = _("❌ {0} ta muammo topildi — import bajarilmaydi").format(len(errors))
+
+    return {
+        "success": pre["success"],
+        "message": message,
+        "errors": errors,
+        "warnings": pre["warnings"],
+        "items": pre["valid_items"],
+        "total_qty": totals["total_qty"],
+        "total_amount": totals["total_amount"],
+    }
 
 
 @frappe.whitelist()
@@ -225,7 +456,7 @@ def _process_import_job(doc_name: str):
         try:
             doc = frappe.get_doc("Jazira App Daily Sales Import", doc_name)
             doc.db_set("status", "Failed")
-            doc.db_set("error_log", str(e))
+            doc.db_set("error_log", getattr(e, "report", "") or str(e))
             frappe.db.commit()
         except Exception:
             pass
@@ -270,85 +501,101 @@ def _process_import_sync(doc_name: str) -> Dict:
     log("=" * 50)
     
     try:
-        # 1. Validate prerequisites
-        log("\n📋 1. Tekshiruvlar...")
-        validation = validate_import_prerequisites(
-            doc.company, doc.source_warehouse, str(doc.posting_date), doc.customer or ""
-        )
-        if not validation["success"]:
-            raise Exception(validation["message"])
-        
-        # 2. Read Excel
-        log("\n📊 2. Excel o'qilmoqda...")
-        excel_data = excel_service.read_sales_report(doc.excel_file)
-        items = excel_data["items"]
-        if not items:
-            raise Exception(_("Excel faylda sotuv topilmadi"))
-        log(f"   ✅ {len(items)} ta qator o'qildi")
+        # ═══════════════ 1-BOSQICH: TO'LIQ TEKSHIRUV ═══════════════
+        # Bu bosqichda HECH QANDAY hujjat yaratilmaydi. Xato topilsa,
+        # import shu yerda to'xtaydi — tizimga yarim-yorti ma'lumot
+        # tushmasligi kafolatlanadi.
+        log("\n📋 1-BOSQICH: TO'LIQ TEKSHIRUV (hujjat yaratilmaydi)")
+        pre = run_preflight_checks(doc)
 
-        # 3. Check duplicate
-        log("\n🔍 3. Dublikat tekshiruvi...")
-        excel_hash = calculate_file_hash(doc.excel_file)
-        duplicate = check_duplicate_import(excel_hash, doc_name)
-        if duplicate["is_duplicate"]:
-            raise Exception(_("Bu Excel avval import qilingan: {0}").format(duplicate["existing_doc"]))
-        
-        # 4. Validate and match items
-        log("\n🔗 4. Itemlar tekshirilmoqda...")
-        item_validation = validate_items_exist(items)
-        if item_validation["errors"]:
-            for e in item_validation["errors"]:
-                log(f"   ❌ Row {e['row']}: {e['error']}")
-            raise Exception(_("Itemlarni tekshirishda xatolik yuz berdi. Logga qarang."))
-        
-        valid_items = item_validation["valid_items"]
-        log(f"   ✅ {len(valid_items)} ta item topildi")
-        
-        # Group items by date
+        cols = pre.get("columns") or {}
+        if cols:
+            log("   📑 Aniqlangan ustunlar: " + ", ".join(f"{k}→{v}" for k, v in sorted(cols.items())))
+        log(f"   📊 O'qilgan sotuv qatori: {len(pre['valid_items'])}")
+
+        for w in pre["warnings"]:
+            log(f"   ⚠️  {w}")
+
+        if not pre["success"]:
+            # Batafsil hisobot "Xato jurnali" maydoniga tushadi — bu yerda
+            # takrorlamaymiz, aks holda bitta xato ikki marta chiqib,
+            # jurnalni o'qish qiyinlashardi.
+            for e in pre["errors"]:
+                log(f"   ❌ {e}")
+            log("")
+            log("   " + _("Batafsil ro'yxat va nima qilish kerakligi — "
+                          "pastdagi 'Xato jurnali' bo'limida."))
+            raise PreflightError(
+                _("Tekshiruvda {0} ta xato topildi — import bajarilmadi. "
+                  "Batafsil sabab 'Xato jurnali' bo'limida.").format(len(pre["errors"])),
+                report=pre["report"] or "\n".join(pre["errors"]),
+            )
+
+        valid_items = pre["valid_items"]
+        excel_hash = pre["excel_hash"]
+        sorted_dates = pre["dates"]
+        log(f"   ✅ Barcha {len(valid_items)} ta qator tekshiruvdan o'tdi")
+        log(f"   📅 Jami {len(sorted_dates)} xil sana aniqlandi")
+
+        # Sana bo'yicha guruhlash
         items_by_date = defaultdict(list)
         fallback_date = str(doc.posting_date)
         for item in valid_items:
-            d = item.get("date") or fallback_date
-            items_by_date[d].append(item)
-            
-        sorted_dates = sorted(items_by_date.keys())
-        log(f"   📅 Jami {len(sorted_dates)} xil sana aniqlandi")
+            items_by_date[item.get("date") or fallback_date].append(item)
 
-        # Sana bo'yicha dublikat tekshiruvi. Yuqoridagi hash tekshiruvi faqat
-        # bir xil faylni ushlaydi — fayl qayta eksport qilinsa, ayni kunni
-        # ikkinchi marta yuklash mumkin edi. Bu yerda esa: shu kompaniya uchun
-        # o'sha sanada boshqa importning SUBMIT holatidagi SI'si bo'lsa,
-        # to'xtatamiz. Bekor qilingan SI to'sqinlik qilmaydi.
-        date_check = check_duplicate_dates(doc.company, sorted_dates, doc_name)
-        if date_check["has_conflict"]:
-            for c in date_check["conflicts"]:
-                log(f"   ❌ {c['date']} — allaqachon import qilingan ({c['import_doc']} → {c['sales_invoice']})")
-            raise Exception(
-                _("Quyidagi sanalar allaqachon import qilingan: {0}. Avval o'sha importni bekor qiling.").format(
-                    ", ".join(c["date"] for c in date_check["conflicts"])
-                )
-            )
+        # ═══════════════ 2-BOSQICH: HUJJAT YARATISH ═══════════════
+        log("\n🏗️  2-BOSQICH: HUJJAT YARATISH")
 
         all_se_names = []
         all_si_names = []
         total_amount = 0
         
-        # Resume support: load previously committed SE/SI names from a failed run
+        # ── Davom ettirish (resume) ────────────────────────────────────
+        # Import har sanani alohida commit qiladi. 5-kunda xato bo'lsa,
+        # oldingi kunlar allaqachon yaratilgan — ularni qayta yaratmaymiz.
+        #
+        # LEKIN: agar operator Excel'ni TUZATIB qayta yuklasa, tuzatilgan
+        # kunlar "allaqachon bajarilgan" deb o'tkazib yuborilar va import
+        # "muvaffaqiyatli" deb tugardi — ya'ni tuzatish jimgina yo'qolardi.
+        # Shuning uchun fayl o'zgargan bo'lsa, davom ettirish TAQIQLANADI.
         already_done_dates = set()
         if doc.sales_invoice:
             existing_si_names = [s.strip() for s in doc.sales_invoice.split(",") if s.strip()]
+
+            if doc.external_ref and doc.external_ref != excel_hash:
+                raise PreflightError(
+                    _("Excel fayl o'zgargan, lekin bu importda allaqachon "
+                      "hujjatlar yaratilgan. Avval 'Bekor qilish' tugmasi bilan "
+                      "importni bekor qiling, keyin yangi faylni yuklang."),
+                    report=_(
+                        "IMPORT DAVOM ETTIRILMADI\n"
+                        "{0}\n\n"
+                        "Bu hujjat oldin {1} ta Sales Invoice yaratgan, lekin Excel "
+                        "fayl o'shandan beri o'zgargan.\n\n"
+                        "Nima qilish kerak:\n"
+                        "  1. 'Bekor qilish' tugmasini bosing — yaratilgan hujjatlar "
+                        "bekor qilinadi;\n"
+                        "  2. Keyin importni qaytadan ishga tushiring."
+                    ).format("=" * 64, len(existing_si_names)),
+                )
+
             all_si_names.extend(existing_si_names)
-            # Find which dates already have SIs
+            # Faqat HAQIQATDA kuchda turgan (submit qilingan) fakturalar
+            # sanani "bajarilgan" deb belgilaydi. Avval docstatus
+            # tekshirilmasdi: qo'lda bekor qilingan faktura ham sanani
+            # to'sib qo'yardi va o'sha kun umuman import qilinmay qolardi.
             for si_name in existing_si_names:
-                si_date = frappe.db.get_value("Sales Invoice", si_name, "posting_date")
-                if si_date:
-                    already_done_dates.add(str(si_date))
+                si = frappe.db.get_value(
+                    "Sales Invoice", si_name, ["posting_date", "docstatus"], as_dict=True)
+                if si and si.docstatus == 1:
+                    already_done_dates.add(str(si.posting_date))
+
         if doc.stock_entry:
             existing_se_names = [s.strip() for s in doc.stock_entry.split(",") if s.strip()]
             all_se_names.extend(existing_se_names)
-        
+
         if already_done_dates:
-            log(f"   ♻️ Resume: {len(already_done_dates)} ta sana oldin bajarilgan, o'tkazib yuboriladi")
+            log(f"   ♻️ Davom ettirish: {len(already_done_dates)} ta sana oldin bajarilgan, o'tkazib yuboriladi")
         
         # Process each date
         for idx, d in enumerate(sorted_dates, 1):
@@ -360,7 +607,19 @@ def _process_import_sync(doc_name: str) -> Dict:
                 continue
             
             log(f"\n--- [{idx}/{len(sorted_dates)}] SANA: {d} ({len(date_items)} ta item) ---")
-            
+
+            # Sana dublikati YARATISHDAN OLDIN qayta tekshiriladi.
+            # Tekshiruv bosqichi bilan yaratish orasida boshqa import shu
+            # kunni yozib ulgurishi mumkin (ilgari bir kun 3 marta import
+            # qilingan holatlar bo'lgan) — bu oyna shu bilan yopiladi.
+            recheck = check_duplicate_dates(doc.company, [d], doc_name)
+            if recheck["has_conflict"]:
+                c = recheck["conflicts"][0]
+                raise Exception(_(
+                    "{0} sanasi shu orada boshqa import tomonidan yozildi "
+                    "({1} → {2}) — to'xtatildi."
+                ).format(c["date"], c["import_doc"], c["sales_invoice"]))
+
             try:
                 # 5. Categorize by BOM (deep copy to prevent mutation across dates)
                 date_items_copy = copy.deepcopy(date_items)
@@ -390,6 +649,10 @@ def _process_import_sync(doc_name: str) -> Dict:
                 )
                 si_name = invoice_service.create_sales_invoice(date_items, invoice_config, submit=True)
                 all_si_names.append(si_name)
+                # Hash DARHOL yoziladi — shunda import yarim yo'lda uzilsa
+                # ham, keyingi urinishda fayl o'zgarganini aniqlay olamiz.
+                if not doc.external_ref:
+                    doc.db_set("external_ref", excel_hash)
                 log(f"   ✅ Sales Invoice yaratildi: {si_name}")
                 # Update doc incrementally
                 doc.db_set("sales_invoice", ", ".join(all_si_names))
@@ -434,7 +697,8 @@ def _process_import_sync(doc_name: str) -> Dict:
         # Re-read doc after rollback to get last committed state
         doc.reload()
         doc.db_set("status", "Failed")
-        doc.db_set("error_log", str(e))
+        # Tekshiruv xatosi bo'lsa — to'liq hisobot, aks holda xato matni
+        doc.db_set("error_log", getattr(e, "report", "") or str(e))
         frappe.db.commit()
         frappe.log_error(f"Import Error: {doc_name}\n{str(e)}", "Daily Sales Import")
         return {"success": False, "message": str(e)}

@@ -10,6 +10,7 @@ from jazira_app.jazira_app.utils.validators import (
     validate_import_prerequisites,
     validate_warehouse_company,
     validate_items_exist,
+    format_item_problems,
     check_duplicate_import,
     check_duplicate_dates
 )
@@ -26,6 +27,7 @@ __all__ = [
     "validate_import_prerequisites",
     "validate_warehouse_company",
     "validate_items_exist",
+    "format_item_problems",
     "check_duplicate_import",
     "check_duplicate_dates",
 ]

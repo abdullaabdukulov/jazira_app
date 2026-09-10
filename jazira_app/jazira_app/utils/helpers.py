@@ -55,11 +55,15 @@ def parse_numeric(value: Any) -> float:
             # Format: 1,234,567 -> 1234567
             str_val = str_val.replace(",", "")
     
-    # Handle dot as thousand separator: 1.234.567
-    if "." in str_val and str_val.count(".") == 1:
-        parts = str_val.split(".")
-        if len(parts[1]) == 3 and parts[1].isdigit():
-            str_val = str_val.replace(".", "")
+    # Nuqta minglik ajratgichmi yoki kasr nuqtasimi?
+    #
+    # Avval "bitta nuqta + 3 ta raqam" minglik ajratgich deb hisoblanardi —
+    # natijada "0.500" (yarim kg) 500 ga, "1.234" esa 1234 ga aylanib
+    # ketardi. Ya'ni miqdor 1000 barobar oshib, sotuv ham, ombor ham
+    # buzilardi. Endi: BIR nuqta — kasr nuqtasi, BIR NECHTA nuqta
+    # (1.234.567) — minglik ajratgich.
+    if str_val.count(".") > 1:
+        str_val = str_val.replace(".", "")
     
     try:
         return float(str_val)

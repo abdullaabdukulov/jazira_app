@@ -5,6 +5,7 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         frm.trigger('set_warehouse_filter');
         frm.trigger('validate_prerequisites');
         frm.trigger('format_stock_entry_links');
+        frm.trigger('make_logs_readable');
         
         // Register realtime listeners ONCE per form instance
         if (!frm._realtime_bound) {
@@ -232,18 +233,53 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
         });
     },
     
+    // Xato jurnali va import jurnali — o'qishga qulay ko'rinish.
+    //
+    // Frappe read-only "Long Text" maydonini HTML sifatida chizadi va
+    // qator ko'chishlari yo'qoladi: butun hisobot bitta uzun satrga
+    // aylanib, o'qib bo'lmay qolardi. Bu yerda o'sha maydonlarga
+    // "pre-wrap" beriladi — matn qanday yozilgan bo'lsa, shunday ko'rinadi.
+    make_logs_readable(frm) {
+        ['error_log', 'import_log'].forEach((fieldname) => {
+            const field = frm.fields_dict[fieldname];
+            if (!field || !field.$wrapper) return;
+            field.$wrapper
+                .find('.like-disabled-input, .control-value, .ql-editor')
+                .css({
+                    'white-space': 'pre-wrap',
+                    'word-break': 'break-word',
+                    'font-family': 'var(--font-stack-monospace, monospace)',
+                    'font-size': '12px',
+                    'line-height': '1.55',
+                    'max-height': '460px',
+                    'overflow-y': 'auto',
+                });
+        });
+    },
+
     render_preview(frm, data) {
         const items = data.items || [];
         const s = data.summary || {};
         
+        // Topilmagan tovar uchun aniq sabab ko'rsatiladi — "NOT FOUND"
+        // degan umumiy yozuv nimani tuzatish kerakligini aytmasdi.
+        const PROBLEM_TEXT = {
+                not_found: __('YO\'Q'),
+                disabled: __('O\'CHIRILGAN'),
+                template: __('SHABLON'),
+                not_sales_item: __('SOTILMAYDI'),
+                ambiguous: __('NOANIQ'),
+        };
+
         const rows = items.map((item, i) => {
-            let badge = !item.found ? '<span class="badge badge-danger">NOT FOUND</span>'
+            let badge = !item.found
+                ? `<span class="badge badge-danger">${PROBLEM_TEXT[item.problem] || __('TOPILMADI')}</span>`
                 : item.has_bom ? '<span class="badge badge-primary">MANUFACTURE</span>'
                 : '<span class="badge badge-secondary">DIRECT SALE</span>';
             
             return `<tr class="${item.found ? '' : 'table-danger'}">
                 <td>${i + 1}</td>
-                <td>${item.item_name}${item.bom ? `<br><small class="text-muted">${item.bom}</small>` : ''}</td>
+                <td>${frappe.utils.escape_html(item.item_name || '')}${item.bom ? `<br><small class="text-muted">${frappe.utils.escape_html(item.bom)}</small>` : ''}</td>
                 <td>${item.item_code || '-'}</td>
                 <td class="text-right">${item.qty}</td>
                 <td class="text-right">${format_currency(item.rate, 'UZS')}</td>
@@ -290,16 +326,37 @@ frappe.ui.form.on('Jazira App Daily Sales Import', {
                 if (!r.message) return;
                 const d = r.message;
                 
+                // Ogohlantirishlar ikkala holatda ham ko'rsatiladi: ular
+                // importni to'xtatmaydi, lekin operator bilishi kerak
+                // (masalan, nechta qator o'qilmagani).
+                const warns = (d.warnings || []).length
+                    ? `<div style="margin-top:10px"><b>${__('Ogohlantirishlar')}:</b><ul>`
+                      + d.warnings.map(w => `<li>${frappe.utils.escape_html(w)}</li>`).join('')
+                      + '</ul></div>'
+                    : '';
+
                 if (d.success) {
                     frappe.msgprint({
-                        title: __('✅ Validation OK'),
+                        title: __('✅ Tekshiruv toza'),
                         indicator: 'green',
-                        message: `<p><strong>${d.items.length}</strong> ta item topildi</p>
-                                  <p>Jami: <strong>${format_currency(d.total_amount, 'UZS')}</strong></p>`
+                        message: `<p><strong>${d.items.length}</strong> ta qator tekshiruvdan o'tdi</p>
+                                  <p>${__('Jami')}: <strong>${format_currency(d.total_amount, 'UZS')}</strong></p>
+                                  ${warns}`
                     });
                 } else {
-                    const errors = (d.errors || []).map(e => `<li>Qator ${e.row}: ${e.error}</li>`).join('');
-                    frappe.msgprint({ title: __('❌ Xatolar'), indicator: 'red', message: `<ul>${errors}</ul>` });
+                    // Faqat dastlabki 50 tasi — 11 000 qatorli faylda
+                    // brauzer qotib qolmasin.
+                    const list = (d.errors || []).slice(0, 50)
+                        .map(e => `<li>${e.row ? __('Qator') + ' ' + e.row + ': ' : ''}${frappe.utils.escape_html(e.error)}</li>`)
+                        .join('');
+                    const more = (d.errors || []).length > 50
+                        ? `<p class="text-muted">… ${__('va yana')} ${d.errors.length - 50} ${__('ta')}</p>` : '';
+                    frappe.msgprint({
+                        title: __('❌ Import bajarilmaydi'),
+                        indicator: 'red',
+                        message: `<p>${__('Quyidagilar tuzatilmaguncha hech qanday hujjat yaratilmaydi:')}</p>
+                                  <ul>${list}</ul>${more}${warns}`
+                    });
                 }
             }
         });
